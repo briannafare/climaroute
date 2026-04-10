@@ -1,12 +1,12 @@
 import { useState, useCallback } from 'react'
-import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMapEvents, Marker, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMapEvents, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import axios from 'axios'
 import { Flame, Droplets, Thermometer, MapPin, Navigation, Shield, AlertTriangle, ChevronDown, Loader2, Mountain, Waves, RotateCcw, Zap } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import './App.css'
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API_BASE = import.meta.env.VITE_API_URL || '__PORT_8000__'
 
 // Fix leaflet default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl

@@ -14,6 +14,10 @@ from sklearn.ensemble import GradientBoostingRegressor
 import pickle
 import os
 
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import pathlib
+
 app = FastAPI(title="ClimaRoute API", version="1.0.0")
 
 app.add_middleware(
@@ -23,6 +27,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve static frontend
+STATIC_DIR = pathlib.Path(__file__).parent / "static"
+if STATIC_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="static-assets")
 
 # ---------------------------------------------------------------------------
 # Climate Risk Model
@@ -325,8 +334,8 @@ route_engine = RouteEngine(risk_model)
 # API Endpoints
 # ---------------------------------------------------------------------------
 
-@app.get("/")
-def root():
+@app.get("/api/health")
+def health():
     return {"service": "ClimaRoute API", "version": "1.0.0", "status": "operational"}
 
 @app.get("/api/risk")
@@ -416,3 +425,15 @@ def get_presets():
             }
         ]
     }
+
+# Catch-all: serve frontend index.html for SPA routing
+@app.get("/{full_path:path}")
+async def serve_frontend(full_path: str):
+    """Serve the React SPA for any non-API route"""
+    file_path = STATIC_DIR / full_path
+    if file_path.is_file():
+        return FileResponse(str(file_path))
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    return {"error": "Not found"}

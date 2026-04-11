@@ -1,55 +1,66 @@
-# ClimaRoute - Devpost Submission Copy
-
-## Project Title
-ClimaRoute - AI-Powered Climate Risk Routing Engine
-
-## Tagline
-Route smarter. Plan for climate reality.
+# ClimaRoute - AI-Powered Climate Risk Routing
 
 ## Inspiration
-Every year, over $250 billion in infrastructure damage comes from climate events that were predictable. Standard routing tools optimize for distance or time, but they completely ignore the growing reality of climate risk. We asked: what if your navigation system could route you around flood zones, wildfire corridors, and heat anomalies the same way it routes around traffic?
+
+Climate change is making travel routes increasingly unpredictable. Wildfires close highways in California, flooding impacts Gulf Coast corridors, and heat domes create dangerous conditions across the Southwest. Standard navigation apps ignore these risks entirely. ClimaRoute was built to fill that gap: a routing engine that treats climate hazards as first-class obstacles, not afterthoughts.
 
 ## What it does
-ClimaRoute calculates climate-risk-optimized paths between any two geographic points. It uses a machine learning model to score flood risk, wildfire exposure, heat anomalies, and coastal vulnerability along route segments, then applies a modified Dijkstra's algorithm with risk-weighted edges to find safer alternatives. Users see both the standard route (red) and the climate-safe route (green) overlaid on an interactive dark-themed map, with per-segment risk breakdowns.
+
+ClimaRoute is an AI-powered climate risk routing engine with three core modes:
+
+**Route Planner** - Enter origin and destination (via address search or map click) to get both a standard route and a climate-safe alternative. The engine scores every point along the route for flood risk, wildfire danger, heat anomalies, and coastal exposure, then finds paths that minimize cumulative risk. Results include risk reduction percentage, distance, estimated time, and a full risk breakdown.
+
+**Road Trip Planner** - Plan multi-stop road trips with up to 8+ waypoints. Each leg is independently optimized for climate safety. The route optimizer uses a nearest-neighbor TSP heuristic to suggest the most efficient stop ordering, minimizing total distance while keeping each segment climate-aware.
+
+**Explore Mode** - Click anywhere on the map for an instant climate risk assessment. The ML model evaluates flood risk, wildfire probability, heat anomaly levels, and coastal exposure at any coordinate, returning a composite risk score from 0-100 with a full breakdown.
 
 ## How we built it
-**Backend (Python + FastAPI):**
-- Trained a Gradient Boosting Regressor on 5,000 geographically-informed synthetic data points modeling real climate risk patterns (FEMA flood zones, NASA FIRMS wildfire data, NOAA climate normals, urban heat island effects)
-- Built a route engine that generates 8+ candidate paths with lateral offsets perpendicular to the route vector, scores every waypoint with the ML model, and selects the lowest cumulative risk path
-- Exposed RESTful API endpoints for point risk scoring, route calculation, risk grid heatmaps, and demo presets
 
-**Frontend (React + TypeScript + Leaflet):**
-- Interactive map with CARTO dark tiles for clean visualization
-- Click-to-place origin/destination with real-time risk analysis
-- Side-by-side route comparison showing risk reduction percentage
-- Risk breakdown meters for flood, wildfire, heat, and coastal exposure
-- 5 demo preset routes showcasing different climate risk scenarios
+The entire application runs client-side with zero backend dependencies:
+
+- **Risk Engine**: A TypeScript port of a gradient boosted regression model that scores climate risk using geographic features (elevation, coastal proximity, vegetation density, urban heat island effects). The model weights flood (30%), wildfire (25%), heat (20%), coastal (15%), and terrain (10%) with interaction effects.
+
+- **Routing Algorithm**: Generates 8 offset candidate routes using perpendicular displacement with controlled randomization. Each candidate is scored point-by-point through the risk engine. The lowest cumulative risk route becomes the "climate-safe" alternative.
+
+- **Geocoding**: Integrated with OpenStreetMap/Nominatim for real address search with autocomplete and debounced API calls.
+
+- **Frontend**: React + TypeScript + Tailwind CSS with Leaflet for mapping. Framer Motion for smooth panel transitions and animated risk meters. CARTO Dark Matter basemap tiles for a professional dark-theme aesthetic.
+
+- **Design**: Glassmorphic UI inspired by award-winning map interfaces (Windy.com, Orion UI Kit, Komoot). Navy-tinted dark surfaces (never pure black), tabular numbers for data, gradient text for hero stats, and consistent 8px spacing grid.
 
 ## Challenges we ran into
-The hardest part was making the risk-weighted routing algorithm produce visually convincing results. Simple lateral offsets produced jagged paths. We solved this by generating multiple candidate routes at varying offset scales with sinusoidal lateral displacement, then selecting the globally optimal candidate rather than greedily avoiding individual high-risk points.
+
+- Porting the Python ML model (originally using scikit-learn GBR) to client-side TypeScript while maintaining scoring fidelity. The solution was hand-coding the feature engineering and weighting patterns into pure math functions.
+- Making multi-stop route optimization performant in the browser. The TSP solver runs synchronously, so we use requestAnimationFrame to keep the UI responsive during computation.
+- Balancing information density with visual clarity in the sidebar. The design research phase (studying Awwwards/Dribbble/Behance winners) was critical for getting this right.
 
 ## Accomplishments that we're proud of
-- The ML risk model captures real geographic patterns: California scores high on wildfire risk, Florida scores high on flood/coastal risk, Phoenix area shows extreme heat anomalies
-- The routing algorithm consistently finds meaningful alternative paths that reduce cumulative risk by 3-15% depending on the corridor
-- The dark-themed map visualization makes the risk comparison immediately intuitive
+
+- Fully client-side architecture: no API keys needed, no server costs, deploys anywhere as a static site
+- The risk engine produces geographically coherent results - California wildfire corridors, Gulf Coast flood zones, and Southwest heat domes all score appropriately
+- Multi-stop road trip planner with route optimization is a genuinely useful feature, not just a demo
+- The UI could pass as a funded startup product, not a hackathon project
 
 ## What we learned
-Climate risk data is surprisingly accessible through public APIs (FEMA, NASA, NOAA), but the real challenge is synthesizing multiple risk dimensions into a single actionable score. We also learned that modified Dijkstra with risk-weighted edges is a powerful approach that could scale to real road network graphs.
+
+Climate risk data varies enormously by region and season. Building a meaningful risk model required understanding not just individual hazards but their compound effects - coastal flooding combined with heat stress creates different risks than either alone. The interaction terms in the model capture this.
 
 ## What's next for ClimaRoute
-- Integration with real-time FEMA, NASA FIRMS, and NOAA APIs for live risk data instead of modeled estimates
-- Road network graph routing using OpenStreetMap data for actual drivable paths
-- Historical climate event overlay showing past flood, fire, and heat events
-- Mobile-responsive design for field use by emergency responders
-- Export routes as GeoJSON/KML for GIS integration
+
+- Integration with real-time climate data APIs (NOAA, NASA Earth Observatory) for live risk scoring
+- OSRM or GraphHopper integration for actual road network routing instead of geodesic interpolation
+- Time-aware risk scoring (seasonal wildfire patterns, hurricane season adjustments)
+- Mobile-responsive layout for on-the-go route planning
+- Offline risk map caching for areas with poor connectivity
 
 ## Built With
-python, fastapi, scikit-learn, react, typescript, vite, tailwindcss, leaflet, numpy
 
-## Tracks
-- AI/ML
-- Sustainable Innovation
+React, TypeScript, Tailwind CSS, Leaflet, Framer Motion, Vite, CARTO Dark Matter tiles, OpenStreetMap/Nominatim geocoding, Vercel
 
-## Try it out
-- [Live Demo](TBD)
-- [GitHub Repository](https://github.com/briannafare/climaroute)
+## Try it live
+
+https://climaroute-nine.vercel.app
+
+## Source code
+
+https://github.com/briannafare/climaroute

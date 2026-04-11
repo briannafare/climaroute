@@ -12,7 +12,8 @@ import {
   MapPin, Navigation, Shield, AlertTriangle,
   Loader2, RotateCcw, Zap, Plus, Trash2,
   Route as RouteIcon, MapPinned, Clock, Gauge, ChevronRight, X, ArrowRight, Sparkles, Info,
-  Sun, Moon, Droplets, Flame, Thermometer, Waves, Mountain, Brain, TrendingDown, Map
+  Sun, Moon, Droplets, Flame, Thermometer, Waves, Mountain, Brain, TrendingDown, Map,
+  Tornado, CloudRain, Snowflake, Leaf
 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import './App.css'
@@ -298,7 +299,7 @@ function WelcomeHero({ onTryDemo }: { onTryDemo: () => void }) {
           Navigate climate risk before you drive
         </h2>
         <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
-          ClimaRoute uses machine learning to score flood, wildfire, heat, and coastal risk across every mile of your journey, then finds you a safer alternative route.
+          ClimaRoute uses machine learning to score 7 climate hazards and eco-sensitivity across every mile of your journey, then finds you a safer alternative route.
         </p>
       </div>
 
@@ -308,7 +309,7 @@ function WelcomeHero({ onTryDemo }: { onTryDemo: () => void }) {
         <div className="space-y-3">
           {[
             { icon: Map, title: 'Enter your route', desc: 'Search for origin and destination, or plan a multi-stop road trip.' },
-            { icon: Brain, title: 'ML risk scoring', desc: 'Our model evaluates flood, wildfire, heat, and coastal exposure for every point along the way.' },
+            { icon: Brain, title: 'ML risk scoring', desc: 'Our model evaluates flood, wildfire, tornado, hurricane, heat, winter, and coastal risk plus eco-sensitivity for every point along the way.' },
             { icon: TrendingDown, title: 'Get a safer route', desc: 'ClimaRoute calculates an alternative path that reduces your overall climate risk.' },
           ].map((step, i) => (
             <div key={i} className="flex gap-4 items-start">
@@ -413,15 +414,23 @@ function PanelContent({ mode, origin, setOrigin, destination, setDestination, tr
                       fire: r.reduce((s: number, x: any) => s + x.wildfire_risk, 0) / r.length,
                       heat: r.reduce((s: number, x: any) => s + x.heat_risk, 0) / r.length,
                       coast: r.reduce((s: number, x: any) => s + x.coastal_exposure, 0) / r.length,
+                      tornado: r.reduce((s: number, x: any) => s + x.tornado_risk, 0) / r.length,
+                      hurricane: r.reduce((s: number, x: any) => s + x.hurricane_risk, 0) / r.length,
+                      winter: r.reduce((s: number, x: any) => s + x.winter_risk, 0) / r.length,
+                      eco: r.reduce((s: number, x: any) => s + x.eco_sensitivity, 0) / r.length,
                     }
                     return (
                       <div className="card-elevated" style={{ padding: '20px' }}>
                         <SectionLabel icon={Shield} label="Risk Breakdown" />
                         <div className="mt-2 space-y-0.5">
                           <RiskMeter label="Flood Risk" value={avg.flood} icon={Droplets} />
-                          <RiskMeter label="Wildfire Risk" value={avg.fire} icon={Flame} />
-                          <RiskMeter label="Heat Anomaly" value={avg.heat} icon={Thermometer} />
-                          <RiskMeter label="Coastal Exposure" value={avg.coast} icon={Waves} />
+                          <RiskMeter label="Wildfire" value={avg.fire} icon={Flame} />
+                          <RiskMeter label="Tornado" value={avg.tornado} icon={Tornado} />
+                          <RiskMeter label="Hurricane" value={avg.hurricane} icon={CloudRain} />
+                          <RiskMeter label="Heat" value={avg.heat} icon={Thermometer} />
+                          <RiskMeter label="Winter" value={avg.winter} icon={Snowflake} />
+                          <RiskMeter label="Coastal" value={avg.coast} icon={Waves} />
+                          <RiskMeter label="Eco-Sensitivity" value={avg.eco} icon={Leaf} />
                         </div>
                       </div>
                     )
@@ -575,9 +584,13 @@ function PanelContent({ mode, origin, setOrigin, destination, setDestination, tr
                     <SectionLabel icon={Shield} label="Factor Breakdown" />
                     <div className="mt-2 space-y-0.5">
                       <RiskMeter label="Flood Risk" value={pointRisk.flood_risk} icon={Droplets} />
-                      <RiskMeter label="Wildfire Risk" value={pointRisk.wildfire_risk} icon={Flame} />
-                      <RiskMeter label="Heat Anomaly" value={pointRisk.heat_risk} icon={Thermometer} />
-                      <RiskMeter label="Coastal Exposure" value={pointRisk.coastal_exposure} icon={Waves} />
+                      <RiskMeter label="Wildfire" value={pointRisk.wildfire_risk} icon={Flame} />
+                      <RiskMeter label="Tornado" value={pointRisk.tornado_risk} icon={Tornado} />
+                      <RiskMeter label="Hurricane" value={pointRisk.hurricane_risk} icon={CloudRain} />
+                      <RiskMeter label="Heat" value={pointRisk.heat_risk} icon={Thermometer} />
+                      <RiskMeter label="Winter" value={pointRisk.winter_risk} icon={Snowflake} />
+                      <RiskMeter label="Coastal" value={pointRisk.coastal_exposure} icon={Waves} />
+                      <RiskMeter label="Eco-Sensitivity" value={pointRisk.eco_sensitivity} icon={Leaf} />
                     </div>
                   </div>
 
@@ -833,7 +846,7 @@ function AppContent() {
                 return (
                   <CircleMarker key={i} center={[coord[0], coord[1]]} radius={4}
                     pathOptions={{ color: riskHex(risk.overall_risk, isDark), fillColor: riskHex(risk.overall_risk, isDark), fillOpacity: 0.5, weight: 1 }}>
-                    <Popup><div style={{ fontSize: 12, padding: 4 }}><strong>Risk: {risk.overall_risk}</strong><br />Flood: {risk.flood_risk} | Fire: {risk.wildfire_risk}<br />Heat: {risk.heat_risk} | Coast: {risk.coastal_exposure}</div></Popup>
+                    <Popup><div style={{ fontSize: 12, padding: 4 }}><strong>Risk: {risk.overall_risk}</strong><br />Flood: {risk.flood_risk} | Fire: {risk.wildfire_risk} | Tornado: {risk.tornado_risk}<br />Hurricane: {risk.hurricane_risk} | Heat: {risk.heat_risk} | Winter: {risk.winter_risk}<br />Coast: {risk.coastal_exposure} | Eco: {risk.eco_sensitivity}</div></Popup>
                   </CircleMarker>
                 )
               })}
@@ -852,7 +865,7 @@ function AppContent() {
           {mode === 'explore' && clickedPoint && (
             <CircleMarker center={clickedPoint} radius={10}
               pathOptions={{ color: riskHex(pointRisk?.overall_risk || 0, isDark), fillColor: riskHex(pointRisk?.overall_risk || 0, isDark), fillOpacity: 0.3, weight: 2 }}>
-              <Popup><div style={{ fontSize: 12, padding: 4 }}><strong>Risk: {pointRisk?.overall_risk}</strong><br />Flood: {pointRisk?.flood_risk} | Fire: {pointRisk?.wildfire_risk}<br />Heat: {pointRisk?.heat_risk} | Coast: {pointRisk?.coastal_exposure}</div></Popup>
+              <Popup><div style={{ fontSize: 12, padding: 4 }}><strong>Risk: {pointRisk?.overall_risk}</strong><br />Flood: {pointRisk?.flood_risk} | Fire: {pointRisk?.wildfire_risk} | Tornado: {pointRisk?.tornado_risk}<br />Hurricane: {pointRisk?.hurricane_risk} | Heat: {pointRisk?.heat_risk} | Winter: {pointRisk?.winter_risk}<br />Coast: {pointRisk?.coastal_exposure} | Eco: {pointRisk?.eco_sensitivity}</div></Popup>
             </CircleMarker>
           )}
         </MapContainer>

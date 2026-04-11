@@ -9,6 +9,10 @@ export interface RiskData {
   wildfire_risk: number
   heat_risk: number
   coastal_exposure: number
+  tornado_risk: number
+  hurricane_risk: number
+  winter_risk: number
+  eco_sensitivity: number
   elevation_ft: number
   risk_level: string
 }
@@ -100,6 +104,85 @@ function estimateCoastalProximity(_lat: number, lng: number): number {
   return clamp((1 / (1 + coastalDist)) * 100, 0, 100)
 }
 
+function estimateTornadoRisk(lat: number, lng: number): number {
+  // Tornado Alley: central plains, highest in OK/KS/NE/TX panhandle/IA/MO
+  let base = 5
+  // Core Tornado Alley
+  if (lng > -103 && lng < -90 && lat > 30 && lat < 45) {
+    base = 55 + (seededRandom(lat, lng, 6) - 0.5) * 20
+    // Peak zone: OK/KS
+    if (lat > 34 && lat < 40 && lng > -100 && lng < -94) base += 20
+  }
+  // Dixie Alley (SE US)
+  if (lng > -92 && lng < -82 && lat > 30 && lat < 37) {
+    base = Math.max(base, 40 + (seededRandom(lat, lng, 6) - 0.5) * 15)
+  }
+  // Mississippi corridor
+  if (lng > -92 && lng < -88 && lat > 32 && lat < 42) {
+    base = Math.max(base, 35 + (seededRandom(lat, lng, 6) - 0.5) * 12)
+  }
+  return clamp(base + (seededRandom(lat, lng, 7) - 0.5) * 8, 0, 100)
+}
+
+function estimateHurricaneRisk(lat: number, lng: number): number {
+  // Gulf Coast, SE Atlantic coast, Caribbean-facing areas
+  let base = 3
+  // Gulf Coast corridor (TX to FL panhandle)
+  if (lat > 24 && lat < 32 && lng > -98 && lng < -80) {
+    const coastProx = Math.max(0, 32 - lat)
+    base = 50 + coastProx * 5 + (seededRandom(lat, lng, 8) - 0.5) * 15
+  }
+  // SE Atlantic coast (FL to NC)
+  if (lat > 25 && lat < 36 && lng > -82 && lng < -75) {
+    const coastProx = Math.max(0, 1 / (1 + Math.abs(lng + 78) * 0.5))
+    base = Math.max(base, 40 + coastProx * 30 + (seededRandom(lat, lng, 8) - 0.5) * 10)
+  }
+  // South Florida peak
+  if (lat > 24 && lat < 27 && lng > -82 && lng < -79) base += 15
+  return clamp(base + (seededRandom(lat, lng, 9) - 0.5) * 6, 0, 100)
+}
+
+function estimateWinterRisk(lat: number, lng: number): number {
+  // Northern states, mountain passes, Great Lakes effect
+  let base = Math.max(0, (lat - 32) * 2.5)
+  // Great Lakes snow belt
+  if (lat > 41 && lat < 48 && lng > -84 && lng < -75) base += 20
+  // Mountain West (Rockies, Cascades, Sierra)
+  if (lng < -105 && lat > 35 && lat < 49) {
+    const elev = estimateElevation(lat, lng)
+    if (elev > 2000) base += 15 + (elev - 2000) / 200
+  }
+  // Northeast ice storms
+  if (lat > 40 && lat < 47 && lng > -80 && lng < -68) base += 12
+  // Midwest ice
+  if (lat > 38 && lat < 46 && lng > -98 && lng < -84) base += 8
+  return clamp(base + (seededRandom(lat, lng, 10) - 0.5) * 10, 0, 100)
+}
+
+function estimateEcoSensitivity(lat: number, lng: number): number {
+  // Endangered species habitat corridors & protected ecosystems
+  let base = 8 + (seededRandom(lat, lng, 11) - 0.5) * 6
+  // Everglades / South FL wetlands
+  if (lat > 24.5 && lat < 27 && lng > -82 && lng < -80) base += 55
+  // Pacific NW old growth (spotted owl territory)
+  if (lat > 42 && lat < 49 && lng > -125 && lng < -120) base += 35
+  // Yellowstone / Greater Yellowstone Ecosystem
+  if (lat > 43.5 && lat < 45.5 && lng > -111.5 && lng < -109) base += 45
+  // Sonoran Desert (Joshua tree, desert tortoise)
+  if (lat > 31 && lat < 35 && lng > -115 && lng < -110) base += 25
+  // Appalachian biodiversity corridor
+  if (lat > 34 && lat < 40 && lng > -84 && lng < -78) base += 20
+  // Chesapeake Bay watershed
+  if (lat > 36.5 && lat < 39.5 && lng > -77.5 && lng < -75.5) base += 22
+  // Gulf Coast marshlands (whooping crane, sea turtles)
+  if (lat > 28 && lat < 31 && lng > -97 && lng < -88) base += 30
+  // California coast (marine sanctuaries)
+  if (lat > 33 && lat < 39 && Math.abs(lng + 121) < 2) base += 20
+  // Great Plains prairie (bison, prairie dog, ferret)
+  if (lat > 38 && lat < 48 && lng > -104 && lng < -97) base += 15
+  return clamp(base, 0, 100)
+}
+
 function riskLevel(score: number): string {
   if (score < 20) return 'Low'
   if (score < 40) return 'Moderate'
@@ -113,16 +196,26 @@ export function scoreRisk(lat: number, lng: number): RiskData {
   const wildfire = estimateWildfireRisk(lat, lng)
   const heat = estimateHeatRisk(lat, lng)
   const coastal = estimateCoastalProximity(lat, lng)
+  const tornado = estimateTornadoRisk(lat, lng)
+  const hurricane = estimateHurricaneRisk(lat, lng)
+  const winter = estimateWinterRisk(lat, lng)
+  const eco = estimateEcoSensitivity(lat, lng)
   const elevation = estimateElevation(lat, lng)
 
+  // Weighted composite - 8 hazard factors
   let overall =
-    0.30 * flood +
-    0.25 * wildfire +
-    0.20 * heat +
-    0.15 * coastal +
-    0.10 * (100 - elevation / 40)
-  overall += 0.1 * (flood * heat / 100)
-  overall = clamp(overall + (seededRandom(lat, lng, 5) - 0.5) * 8, 0, 100)
+    0.18 * flood +
+    0.16 * wildfire +
+    0.14 * heat +
+    0.10 * coastal +
+    0.14 * tornado +
+    0.12 * hurricane +
+    0.10 * winter +
+    0.06 * eco
+  // Compound risk interaction bonus
+  overall += 0.05 * (flood * heat / 100)
+  overall += 0.03 * (tornado * hurricane / 100)
+  overall = clamp(overall + (seededRandom(lat, lng, 5) - 0.5) * 6, 0, 100)
 
   return {
     overall_risk: Math.round(overall * 10) / 10,
@@ -130,6 +223,10 @@ export function scoreRisk(lat: number, lng: number): RiskData {
     wildfire_risk: Math.round(wildfire * 10) / 10,
     heat_risk: Math.round(heat * 10) / 10,
     coastal_exposure: Math.round(coastal * 10) / 10,
+    tornado_risk: Math.round(tornado * 10) / 10,
+    hurricane_risk: Math.round(hurricane * 10) / 10,
+    winter_risk: Math.round(winter * 10) / 10,
+    eco_sensitivity: Math.round(eco * 10) / 10,
     elevation_ft: Math.round(elevation),
     risk_level: riskLevel(overall),
   }
@@ -362,7 +459,7 @@ export const PRESETS = [
   },
   {
     name: 'Houston to Dallas',
-    tag: 'Heat + Flood',
+    tag: 'Heat + Tornado + Flood',
     from_lat: 29.7604, from_lng: -95.3698,
     to_lat: 32.7767, to_lng: -96.7970,
     from_label: 'Houston, TX',
@@ -378,11 +475,27 @@ export const PRESETS = [
   },
   {
     name: 'NYC to DC',
-    tag: 'Coastal Flooding',
+    tag: 'Coastal + Eco Corridor',
     from_lat: 40.7128, from_lng: -74.0060,
     to_lat: 38.9072, to_lng: -77.0369,
     from_label: 'New York, NY',
     to_label: 'Washington, DC',
+  },
+  {
+    name: 'OKC to Memphis',
+    tag: 'Tornado Alley',
+    from_lat: 35.4676, from_lng: -97.5164,
+    to_lat: 35.1495, to_lng: -90.0490,
+    from_label: 'Oklahoma City, OK',
+    to_label: 'Memphis, TN',
+  },
+  {
+    name: 'Denver to Minneapolis',
+    tag: 'Winter + Tornado',
+    from_lat: 39.7392, from_lng: -104.9903,
+    to_lat: 44.9778, to_lng: -93.2650,
+    from_label: 'Denver, CO',
+    to_label: 'Minneapolis, MN',
   },
 ]
 

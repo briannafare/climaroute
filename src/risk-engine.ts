@@ -1,6 +1,6 @@
 /**
- * ClimaRoute Risk Engine - Fully client-side implementation
- * ML risk scoring and climate-aware routing, no backend needed
+ * ClimaRoute v2 Risk Engine
+ * ML risk scoring, climate-aware routing, multi-stop trip planning
  */
 
 export interface RiskData {
@@ -18,6 +18,7 @@ export interface RouteData {
   risks: RiskData[]
   total_risk: number
   distance_mi: number
+  estimated_time_hrs: number
 }
 
 export interface RouteResult {
@@ -26,7 +27,24 @@ export interface RouteResult {
   risk_reduction_pct?: number
 }
 
-// Deterministic pseudo-random seeded by coordinates (consistent results per location)
+export interface MultiStopResult {
+  legs: RouteResult[]
+  optimized_order?: number[]
+  total_distance_mi: number
+  total_time_hrs: number
+  avg_risk: number
+  total_risk_reduction_pct: number
+}
+
+export interface GeocodeSuggestion {
+  display_name: string
+  lat: number
+  lon: number
+  type: string
+  importance: number
+}
+
+// Deterministic pseudo-random seeded by coordinates
 function seededRandom(lat: number, lng: number, salt: number = 0): number {
   const x = Math.sin((lat * 12.9898 + lng * 78.233 + salt * 43.1234)) * 43758.5453
   return x - Math.floor(x)
@@ -36,7 +54,7 @@ function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val))
 }
 
-// --- Risk Scoring (port of Python ClimateRiskModel) ---
+// --- Risk Scoring ---
 
 function estimateElevation(lat: number, lng: number): number {
   const base = lng < -100
@@ -48,9 +66,7 @@ function estimateElevation(lat: number, lng: number): number {
 function estimateFloodRisk(lat: number, lng: number): number {
   const coastalDist = Math.min(Math.abs(lng + 75), Math.abs(lng + 122)) + Math.abs(lat - 30) * 0.1
   let base = (1 / (1 + coastalDist * 2)) * 100
-  // Mississippi River corridor
   if (lng > -92 && lng < -88 && lat > 29 && lat < 42) base += 25
-  // Florida
   if (lng > -88 && lng < -80 && lat > 24 && lat < 31) base += 20
   return clamp(base + (seededRandom(lat, lng, 2) - 0.5) * 10, 0, 100)
 }
@@ -59,7 +75,6 @@ function estimateWildfireRisk(lat: number, lng: number): number {
   let base: number
   if (lng < -100 && lat > 30 && lat < 48) {
     base = 55 + (seededRandom(lat, lng, 3) - 0.5) * 30
-    // California extra risk
     if (lng > -125 && lng < -115 && lat > 32 && lat < 42) base += 20
   } else {
     base = 12 + (seededRandom(lat, lng, 3) - 0.5) * 16
@@ -69,14 +84,9 @@ function estimateWildfireRisk(lat: number, lng: number): number {
 
 function estimateHeatRisk(lat: number, lng: number): number {
   let base = (50 - lat) * 2.5
-  // Urban heat islands
   const cities: [number, number, number][] = [
-    [33.4, -112.0, 25],  // Phoenix
-    [29.7, -95.3, 20],   // Houston
-    [25.7, -80.2, 18],   // Miami
-    [33.7, -84.3, 15],   // Atlanta
-    [32.7, -96.8, 18],   // Dallas
-    [36.1, -115.1, 22],  // Las Vegas
+    [33.4, -112.0, 25], [29.7, -95.3, 20], [25.7, -80.2, 18],
+    [33.7, -84.3, 15], [32.7, -96.8, 18], [36.1, -115.1, 22],
   ]
   for (const [clat, clng, bonus] of cities) {
     const dist = Math.sqrt((lat - clat) ** 2 + (lng - clng) ** 2)
@@ -91,11 +101,11 @@ function estimateCoastalProximity(_lat: number, lng: number): number {
 }
 
 function riskLevel(score: number): string {
-  if (score < 20) return 'low'
-  if (score < 40) return 'moderate'
-  if (score < 60) return 'elevated'
-  if (score < 80) return 'high'
-  return 'severe'
+  if (score < 20) return 'Low'
+  if (score < 40) return 'Moderate'
+  if (score < 60) return 'Elevated'
+  if (score < 80) return 'High'
+  return 'Severe'
 }
 
 export function scoreRisk(lat: number, lng: number): RiskData {
@@ -105,14 +115,12 @@ export function scoreRisk(lat: number, lng: number): RiskData {
   const coastal = estimateCoastalProximity(lat, lng)
   const elevation = estimateElevation(lat, lng)
 
-  // Composite score (matches Python GBR weighting pattern)
   let overall =
     0.30 * flood +
     0.25 * wildfire +
     0.20 * heat +
     0.15 * coastal +
     0.10 * (100 - elevation / 40)
-  // Interaction effects
   overall += 0.1 * (flood * heat / 100)
   overall = clamp(overall + (seededRandom(lat, lng, 5) - 0.5) * 8, 0, 100)
 
@@ -127,7 +135,7 @@ export function scoreRisk(lat: number, lng: number): RiskData {
   }
 }
 
-// --- Routing Engine (port of Python RouteEngine) ---
+// --- Routing Engine ---
 
 function interpolateRoute(
   lat1: number, lng1: number, lat2: number, lng2: number, n: number
@@ -158,19 +166,17 @@ function generateOffsetRoute(
     const t = i / (n - 1)
     let offset = Math.sin(t * Math.PI) * offsetScale
     offset += (seededRandom(lat1 + i, lng1 + i, 99) - 0.5) * offsetScale * 0.6
-
     const lat = lat1 + (lat2 - lat1) * t + perpLat * offset
     const lng = lng1 + (lng2 - lng1) * t + perpLng * offset
     points.push([lat, lng])
   }
-  // Pin endpoints
   points[0] = [lat1, lng1]
   points[n - 1] = [lat2, lng2]
   return points
 }
 
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 3959 // miles
+export function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 3959
   const dLat = (lat2 - lat1) * Math.PI / 180
   const dLng = (lng2 - lng1) * Math.PI / 180
   const a =
@@ -191,11 +197,13 @@ function routeDistance(points: [number, number][]): number {
 function buildRouteData(points: [number, number][]): RouteData {
   const risks = points.map(p => scoreRisk(p[0], p[1]))
   const totalRisk = risks.reduce((s, r) => s + r.overall_risk, 0) / risks.length
+  const dist = routeDistance(points)
   return {
     coordinates: points.map(p => [p[0], p[1]]),
     risks,
     total_risk: Math.round(totalRisk * 10) / 10,
-    distance_mi: routeDistance(points),
+    distance_mi: dist,
+    estimated_time_hrs: Math.round((dist / 55) * 10) / 10,  // ~55mph avg
   }
 }
 
@@ -204,12 +212,9 @@ export function calculateRoute(
   toLat: number, toLng: number
 ): RouteResult {
   const numPoints = 20
-
-  // Standard route
   const standardPoints = interpolateRoute(fromLat, fromLng, toLat, toLng, numPoints)
   const standard = buildRouteData(standardPoints)
 
-  // Climate-safe: test 8 offset candidates, pick lowest risk
   let bestPoints = standardPoints
   let bestTotalRisk = standard.risks.reduce((s, r) => s + r.overall_risk, 0)
 
@@ -220,7 +225,6 @@ export function calculateRoute(
     )
     const candidateRisks = candidate.map(p => scoreRisk(p[0], p[1]))
     const candidateTotal = candidateRisks.reduce((s, r) => s + r.overall_risk, 0)
-
     if (candidateTotal < bestTotalRisk) {
       bestPoints = candidate
       bestTotalRisk = candidateTotal
@@ -239,35 +243,183 @@ export function calculateRoute(
   }
 }
 
+// --- Multi-Stop Trip Planning ---
+
+export function calculateMultiStopRoute(stops: [number, number][]): MultiStopResult {
+  if (stops.length < 2) {
+    return { legs: [], total_distance_mi: 0, total_time_hrs: 0, avg_risk: 0, total_risk_reduction_pct: 0 }
+  }
+
+  const legs: RouteResult[] = []
+  for (let i = 0; i < stops.length - 1; i++) {
+    legs.push(calculateRoute(stops[i][0], stops[i][1], stops[i + 1][0], stops[i + 1][1]))
+  }
+
+  const totalDist = legs.reduce((s, l) => s + (l.climate_safe?.distance_mi || l.standard.distance_mi), 0)
+  const totalTime = legs.reduce((s, l) => s + (l.climate_safe?.estimated_time_hrs || l.standard.estimated_time_hrs), 0)
+  const avgRisk = legs.reduce((s, l) => s + (l.climate_safe?.total_risk || l.standard.total_risk), 0) / legs.length
+  const avgReduction = legs.reduce((s, l) => s + (l.risk_reduction_pct || 0), 0) / legs.length
+
+  return {
+    legs,
+    total_distance_mi: Math.round(totalDist * 10) / 10,
+    total_time_hrs: Math.round(totalTime * 10) / 10,
+    avg_risk: Math.round(avgRisk * 10) / 10,
+    total_risk_reduction_pct: Math.round(avgReduction * 10) / 10,
+  }
+}
+
+// --- Route Optimizer (TSP nearest-neighbor heuristic) ---
+
+export function optimizeStopOrder(stops: [number, number][]): { order: number[], distance: number } {
+  if (stops.length <= 2) return { order: stops.map((_, i) => i), distance: 0 }
+
+  // Keep first and last fixed, optimize middle stops
+  const first = 0
+  const last = stops.length - 1
+  const middleIndices = stops.slice(1, -1).map((_, i) => i + 1)
+
+  // Nearest neighbor from start
+  const visited: number[] = [first]
+  const remaining = new Set(middleIndices)
+
+  let current = first
+  while (remaining.size > 0) {
+    let nearest = -1
+    let nearestDist = Infinity
+    for (const idx of remaining) {
+      const d = haversine(stops[current][0], stops[current][1], stops[idx][0], stops[idx][1])
+      if (d < nearestDist) {
+        nearestDist = d
+        nearest = idx
+      }
+    }
+    visited.push(nearest)
+    remaining.delete(nearest)
+    current = nearest
+  }
+  visited.push(last)
+
+  // Calculate total distance
+  let totalDist = 0
+  for (let i = 0; i < visited.length - 1; i++) {
+    totalDist += haversine(
+      stops[visited[i]][0], stops[visited[i]][1],
+      stops[visited[i + 1]][0], stops[visited[i + 1]][1]
+    )
+  }
+
+  return { order: visited, distance: Math.round(totalDist * 10) / 10 }
+}
+
+// --- Geocoding ---
+
+let geocodeAbortController: AbortController | null = null
+
+export async function geocodeSearch(query: string): Promise<GeocodeSuggestion[]> {
+  if (geocodeAbortController) geocodeAbortController.abort()
+  geocodeAbortController = new AbortController()
+
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=us&addressdetails=1`,
+      {
+        signal: geocodeAbortController.signal,
+        headers: { 'Accept-Language': 'en' }
+      }
+    )
+    const data = await response.json()
+    return data.map((item: any) => ({
+      display_name: item.display_name,
+      lat: parseFloat(item.lat),
+      lon: parseFloat(item.lon),
+      type: item.type,
+      importance: item.importance,
+    }))
+  } catch (e: any) {
+    if (e.name === 'AbortError') return []
+    console.error('Geocode error:', e)
+    return []
+  }
+}
+
 export const PRESETS = [
   {
-    name: 'LA to Phoenix (Wildfire Corridor)',
+    name: 'LA to Phoenix',
+    tag: 'Wildfire Corridor',
     from_lat: 34.0522, from_lng: -118.2437,
     to_lat: 33.4484, to_lng: -112.0740,
-    description: 'Route through Southern California wildfire zones',
+    from_label: 'Los Angeles, CA',
+    to_label: 'Phoenix, AZ',
   },
   {
-    name: 'Miami to Atlanta (Hurricane Belt)',
+    name: 'Miami to Atlanta',
+    tag: 'Hurricane Belt',
     from_lat: 25.7617, from_lng: -80.1918,
     to_lat: 33.7490, to_lng: -84.3880,
-    description: 'Coastal flood risk and hurricane corridor',
+    from_label: 'Miami, FL',
+    to_label: 'Atlanta, GA',
   },
   {
-    name: 'Houston to Dallas (Heat + Flood)',
+    name: 'Houston to Dallas',
+    tag: 'Heat + Flood',
     from_lat: 29.7604, from_lng: -95.3698,
     to_lat: 32.7767, to_lng: -96.7970,
-    description: 'Compound heat and flood risk zone',
+    from_label: 'Houston, TX',
+    to_label: 'Dallas, TX',
   },
   {
-    name: 'SF to Portland (Pacific Wildfire)',
+    name: 'SF to Portland',
+    tag: 'Pacific Wildfire',
     from_lat: 37.7749, from_lng: -122.4194,
     to_lat: 45.5152, to_lng: -122.6784,
-    description: 'Pacific Northwest wildfire and smoke corridor',
+    from_label: 'San Francisco, CA',
+    to_label: 'Portland, OR',
   },
   {
-    name: 'NYC to DC (Coastal Flooding)',
+    name: 'NYC to DC',
+    tag: 'Coastal Flooding',
     from_lat: 40.7128, from_lng: -74.0060,
     to_lat: 38.9072, to_lng: -77.0369,
-    description: 'Atlantic seaboard flood and storm surge zones',
+    from_label: 'New York, NY',
+    to_label: 'Washington, DC',
+  },
+]
+
+export const ROAD_TRIP_PRESETS = [
+  {
+    name: 'West Coast Highway',
+    tag: 'Fire + Coastal',
+    stops: [
+      { lat: 32.7157, lng: -117.1611, label: 'San Diego, CA' },
+      { lat: 34.0522, lng: -118.2437, label: 'Los Angeles, CA' },
+      { lat: 36.7783, lng: -119.4179, label: 'Fresno, CA' },
+      { lat: 37.7749, lng: -122.4194, label: 'San Francisco, CA' },
+      { lat: 45.5152, lng: -122.6784, label: 'Portland, OR' },
+    ]
+  },
+  {
+    name: 'Southern Cross-Country',
+    tag: 'Heat + Hurricane',
+    stops: [
+      { lat: 34.0522, lng: -118.2437, label: 'Los Angeles, CA' },
+      { lat: 33.4484, lng: -112.0740, label: 'Phoenix, AZ' },
+      { lat: 32.2226, lng: -110.9747, label: 'Tucson, AZ' },
+      { lat: 29.7604, lng: -95.3698, label: 'Houston, TX' },
+      { lat: 29.9511, lng: -90.0715, label: 'New Orleans, LA' },
+      { lat: 25.7617, lng: -80.1918, label: 'Miami, FL' },
+    ]
+  },
+  {
+    name: 'Eastern Seaboard',
+    tag: 'Flood + Storm Surge',
+    stops: [
+      { lat: 42.3601, lng: -71.0589, label: 'Boston, MA' },
+      { lat: 40.7128, lng: -74.0060, label: 'New York, NY' },
+      { lat: 39.9526, lng: -75.1652, label: 'Philadelphia, PA' },
+      { lat: 38.9072, lng: -77.0369, label: 'Washington, DC' },
+      { lat: 33.7490, lng: -84.3880, label: 'Atlanta, GA' },
+      { lat: 25.7617, lng: -80.1918, label: 'Miami, FL' },
+    ]
   },
 ]

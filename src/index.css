@@ -1,35 +1,153 @@
-@import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:opsz,wght@14..32,300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import 'tailwindcss';
 
 @theme {
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif: 'DM Serif Display', Georgia, 'Times New Roman', serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
+/* =========================================
+   LIGHT MODE (default)
+   Warm, earthy, illustrated atlas feel
+   ========================================= */
 :root {
-  /* Surface system - navy-tinted, never pure black */
+  --surface-base: #f5f0e8;
+  --surface-raised: #faf7f2;
+  --surface-overlay: #ede8de;
+  --surface-elevated: #e6dfd3;
+  --surface-float: #ffffff;
+
+  --glass-bg: rgba(250, 247, 242, 0.92);
+  --glass-bg-light: rgba(139, 115, 85, 0.04);
+  --glass-border: rgba(139, 115, 85, 0.12);
+  --glass-border-vivid: rgba(139, 115, 85, 0.22);
+
+  --text-primary: #2c2416;
+  --text-secondary: #6b5d4d;
+  --text-muted: #a09382;
+
+  --accent-primary: #2d6a4f;
+  --accent-primary-light: #40916c;
+  --accent-primary-glow: rgba(45, 106, 79, 0.12);
+  --accent-safe: #2d6a4f;
+  --accent-warning: #c77b2f;
+  --accent-danger: #b44730;
+
+  --risk-low: #2d6a4f;
+  --risk-moderate: #6b8e23;
+  --risk-elevated: #c77b2f;
+  --risk-high: #c25e30;
+  --risk-severe: #b44730;
+
+  --card-bg: rgba(255, 255, 255, 0.7);
+  --card-border: rgba(139, 115, 85, 0.15);
+  --card-shadow: 0 2px 12px rgba(44, 36, 22, 0.06), 0 0 0 1px rgba(139, 115, 85, 0.08);
+
+  --input-bg: rgba(255, 255, 255, 0.6);
+  --input-border: rgba(139, 115, 85, 0.18);
+  --input-focus-border: rgba(45, 106, 79, 0.5);
+  --input-focus-ring: rgba(45, 106, 79, 0.1);
+
+  --btn-primary-from: #2d6a4f;
+  --btn-primary-to: #40916c;
+  --btn-primary-hover-from: #40916c;
+  --btn-primary-hover-to: #52b788;
+  --btn-primary-shadow: rgba(45, 106, 79, 0.2);
+
+  --tab-active-bg: rgba(45, 106, 79, 0.12);
+  --tab-active-text: #2d6a4f;
+  --tab-inactive-text: #8b7355;
+
+  --tooltip-bg: rgba(44, 36, 22, 0.92);
+  --tooltip-text: #f5f0e8;
+
+  --scrollbar-thumb: rgba(139, 115, 85, 0.15);
+  --scrollbar-thumb-hover: rgba(139, 115, 85, 0.28);
+
+  --map-attribution-bg: rgba(245, 240, 232, 0.88);
+  --map-attribution-text: #a09382;
+
+  --popup-bg: rgba(255, 255, 255, 0.96);
+  --popup-border: rgba(139, 115, 85, 0.12);
+  --popup-text: #2c2416;
+  --popup-shadow: 0 12px 40px rgba(44, 36, 22, 0.15);
+
+  --ornament-color: rgba(139, 115, 85, 0.08);
+  --divider-line: rgba(139, 115, 85, 0.1);
+  --illustration-opacity: 0.06;
+}
+
+/* =========================================
+   DARK MODE
+   Deep ocean-navy, luminous accents
+   ========================================= */
+.dark {
   --surface-base: #0b0f1a;
   --surface-raised: #111827;
   --surface-overlay: #1a2234;
   --surface-elevated: #242d42;
   --surface-float: #2e3a54;
 
-  /* Glassmorphism */
   --glass-bg: rgba(11, 15, 26, 0.92);
   --glass-bg-light: rgba(255, 255, 255, 0.04);
   --glass-border: rgba(255, 255, 255, 0.06);
   --glass-border-vivid: rgba(255, 255, 255, 0.12);
 
-  /* Text - never pure white */
   --text-primary: #f0f4ff;
   --text-secondary: #94a3b8;
   --text-muted: #475569;
 
-  /* Accent */
+  --accent-primary: #34d399;
+  --accent-primary-light: #6ee7b7;
+  --accent-primary-glow: rgba(52, 211, 153, 0.15);
   --accent-safe: #34d399;
   --accent-warning: #fbbf24;
   --accent-danger: #f87171;
+
+  --risk-low: #34d399;
+  --risk-moderate: #a3e635;
+  --risk-elevated: #fbbf24;
+  --risk-high: #fb923c;
+  --risk-severe: #f87171;
+
+  --card-bg: rgba(255, 255, 255, 0.03);
+  --card-border: rgba(255, 255, 255, 0.06);
+  --card-shadow: 0 2px 12px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.04);
+
+  --input-bg: rgba(255, 255, 255, 0.04);
+  --input-border: rgba(255, 255, 255, 0.06);
+  --input-focus-border: rgba(52, 211, 153, 0.4);
+  --input-focus-ring: rgba(52, 211, 153, 0.1);
+
+  --btn-primary-from: #059669;
+  --btn-primary-to: #0d9488;
+  --btn-primary-hover-from: #34d399;
+  --btn-primary-hover-to: #2dd4bf;
+  --btn-primary-shadow: rgba(52, 211, 153, 0.15);
+
+  --tab-active-bg: rgba(52, 211, 153, 0.12);
+  --tab-active-text: #34d399;
+  --tab-inactive-text: #64748b;
+
+  --tooltip-bg: rgba(11, 15, 26, 0.95);
+  --tooltip-text: #f0f4ff;
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.08);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.16);
+
+  --map-attribution-bg: rgba(11, 15, 26, 0.88);
+  --map-attribution-text: #3f3f46;
+
+  --popup-bg: rgba(17, 24, 39, 0.96);
+  --popup-border: rgba(255, 255, 255, 0.08);
+  --popup-text: #f0f4ff;
+  --popup-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+
+  --ornament-color: rgba(255, 255, 255, 0.02);
+  --divider-line: rgba(255, 255, 255, 0.06);
+  --illustration-opacity: 0.03;
 }
 
 * {
@@ -50,44 +168,80 @@ body {
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.4s ease, color 0.3s ease;
 }
 
-/* === GLASSMORPHIC SIDEBAR === */
+/* =========================================
+   GLASSMORPHIC SIDEBAR
+   ========================================= */
 .glass-sidebar {
   background: var(--glass-bg);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   border-right: 1px solid var(--glass-border);
   box-shadow:
+    4px 0 32px rgba(0, 0, 0, 0.08),
+    inset -1px 0 0 var(--glass-border);
+  transition: background 0.4s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.dark .glass-sidebar {
+  box-shadow:
     4px 0 32px rgba(0, 0, 0, 0.5),
     inset -1px 0 0 rgba(255, 255, 255, 0.03);
 }
 
-/* === GRADIENT TEXT for hero stats === */
+/* =========================================
+   GRADIENT TEXT
+   ========================================= */
 .gradient-text-safe {
-  background: linear-gradient(135deg, #34d399, #22d3ee);
+  background: linear-gradient(135deg, var(--accent-safe), var(--accent-primary-light));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .gradient-text-risk {
-  background: linear-gradient(135deg, #fb923c, #f87171);
+  background: linear-gradient(135deg, var(--risk-high), var(--risk-severe));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-/* === TABULAR NUMBERS for data === */
+/* =========================================
+   TABULAR NUMBERS
+   ========================================= */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
 }
 
-/* === CUSTOM SCROLLBAR === */
+/* =========================================
+   ILLUSTRATED ORNAMENT BORDERS
+   Dashed, hand-drawn feel for section dividers
+   ========================================= */
+.ornament-border {
+  border-style: dashed;
+  border-color: var(--ornament-color);
+}
+
+.ornament-divider {
+  height: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--divider-line) 0,
+    var(--divider-line) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+}
+
+/* =========================================
+   CUSTOM SCROLLBAR
+   ========================================= */
 .custom-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.08) transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
@@ -96,44 +250,49 @@ body {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--scrollbar-thumb);
   border-radius: 2px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--scrollbar-thumb-hover);
 }
 
-/* === LEAFLET OVERRIDES === */
+/* =========================================
+   LEAFLET OVERRIDES
+   ========================================= */
 .leaflet-container {
   background: var(--surface-base) !important;
   font-family: var(--font-sans) !important;
+  transition: background-color 0.4s ease;
 }
 
 .leaflet-control-attribution {
-  background: rgba(11, 15, 26, 0.88) !important;
+  background: var(--map-attribution-bg) !important;
   backdrop-filter: blur(12px) !important;
-  color: #3f3f46 !important;
+  color: var(--map-attribution-text) !important;
   font-size: 9px !important;
   border: none !important;
   padding: 2px 6px !important;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .leaflet-control-attribution a {
-  color: #52525b !important;
+  color: var(--map-attribution-text) !important;
 }
 
 .leaflet-popup-content-wrapper {
-  background: rgba(17, 24, 39, 0.95) !important;
+  background: var(--popup-bg) !important;
   backdrop-filter: blur(20px) saturate(200%) !important;
   -webkit-backdrop-filter: blur(20px) saturate(200%) !important;
-  color: var(--text-primary) !important;
+  color: var(--popup-text) !important;
   border-radius: 12px !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(34, 211, 153, 0.06) !important;
+  border: 1px solid var(--popup-border) !important;
+  box-shadow: var(--popup-shadow) !important;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 .leaflet-popup-tip {
-  background: rgba(17, 24, 39, 0.95) !important;
+  background: var(--popup-bg) !important;
   border: none !important;
   box-shadow: none !important;
 }
@@ -142,23 +301,23 @@ body {
   margin: 12px 16px !important;
   font-size: 12px !important;
   line-height: 1.6 !important;
-  color: var(--text-primary) !important;
+  color: var(--popup-text) !important;
 }
 
 .leaflet-popup-content strong {
-  color: #fafafa !important;
+  color: var(--text-primary) !important;
   font-weight: 600 !important;
 }
 
 .leaflet-popup-close-button {
-  color: #52525b !important;
+  color: var(--text-muted) !important;
   font-size: 16px !important;
   top: 4px !important;
   right: 6px !important;
 }
 
 .leaflet-popup-close-button:hover {
-  color: #a1a1aa !important;
+  color: var(--text-secondary) !important;
 }
 
 /* Custom marker styling */
@@ -167,7 +326,9 @@ body {
   border: none !important;
 }
 
-/* === ANIMATIONS === */
+/* =========================================
+   ANIMATIONS
+   ========================================= */
 @keyframes pulse-ring {
   0% { transform: scale(1); opacity: 0.6; }
   100% { transform: scale(2.5); opacity: 0; }
@@ -178,12 +339,17 @@ body {
   100% { background-position: 200% 0; }
 }
 
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
 .skeleton-loader {
   background: linear-gradient(
     90deg,
-    rgba(255,255,255,0.03) 25%,
-    rgba(255,255,255,0.08) 50%,
-    rgba(255,255,255,0.03) 75%
+    var(--card-bg) 25%,
+    var(--glass-border-vivid) 50%,
+    var(--card-bg) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite linear;
@@ -204,7 +370,7 @@ button, input {
 }
 
 input:focus {
-  box-shadow: 0 0 0 2px rgba(34, 211, 153, 0.15), 0 0 16px rgba(34, 211, 153, 0.06);
+  box-shadow: 0 0 0 2px var(--input-focus-ring), 0 0 16px var(--input-focus-ring);
 }
 
 /* Glass card hover */
@@ -213,15 +379,78 @@ input:focus {
 }
 .glass-card:hover {
   transform: translateY(-1px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(34, 211, 238, 0.06);
+  box-shadow: var(--card-shadow);
 }
 
-/* Route line glow via SVG filter (Leaflet path enhancement) */
+/* Route line glow via SVG filter */
 .leaflet-overlay-pane svg path {
+  filter: drop-shadow(0 0 4px rgba(45, 106, 79, 0.25));
+}
+.dark .leaflet-overlay-pane svg path {
   filter: drop-shadow(0 0 4px rgba(52, 211, 153, 0.3));
 }
 
-/* === MOBILE BOTTOM SHEET === */
+/* =========================================
+   ILLUSTRATED CARD STYLE
+   Organic feel with subtle texture
+   ========================================= */
+.illustrated-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  position: relative;
+  overflow: hidden;
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.illustrated-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent-safe), var(--accent-primary-light), var(--accent-safe));
+  opacity: 0.6;
+  border-radius: 16px 16px 0 0;
+}
+
+/* =========================================
+   THEME TOGGLE
+   ========================================= */
+.theme-toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border-vivid);
+  background: var(--card-bg);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  padding: 0 3px;
+}
+
+.theme-toggle-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark .theme-toggle-thumb {
+  transform: translateX(20px);
+}
+
+/* =========================================
+   MOBILE BOTTOM SHEET
+   ========================================= */
 .mobile-sheet {
   touch-action: none;
 }
@@ -231,9 +460,18 @@ input:focus {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Mobile-specific overrides */
+/* =========================================
+   COMPASS ROSE (decorative)
+   ========================================= */
+.compass-rose {
+  opacity: var(--illustration-opacity);
+  transition: opacity 0.3s ease;
+}
+
+/* =========================================
+   MOBILE OVERRIDES
+   ========================================= */
 @media (max-width: 767px) {
-  /* Shrink leaflet attribution on mobile */
   .leaflet-control-attribution {
     font-size: 7px !important;
     max-width: 50vw;
@@ -242,7 +480,6 @@ input:focus {
     text-overflow: ellipsis;
   }
 
-  /* Make leaflet popups smaller on mobile */
   .leaflet-popup-content {
     margin: 8px 12px !important;
     font-size: 11px !important;
@@ -252,17 +489,14 @@ input:focus {
     border-radius: 10px !important;
   }
 
-  /* Adjust zoom controls */
   .leaflet-control-zoom {
     top: 48px !important;
   }
 
-  /* Safe area padding for bottom sheet */
   .mobile-sheet {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  /* Prevent body scroll */
   body {
     overscroll-behavior: none;
     overflow: hidden;

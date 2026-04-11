@@ -230,8 +230,9 @@ function ThemedTileLayer() {
   return (
     <TileLayer
       key="light-tiles"
-      attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://stamen.com/">Stamen Design</a>'
-      url="https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png"
+      attribution='&copy; <a href="https://opentopomap.org">OpenTopoMap</a> &copy; <a href="https://openstreetmap.org">OSM</a>'
+      url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+      maxZoom={17}
     />
   )
 }

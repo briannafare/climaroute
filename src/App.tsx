@@ -1,12 +1,10 @@
 import { useState, useCallback } from 'react'
 import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMapEvents, useMap } from 'react-leaflet'
 import L from 'leaflet'
-import axios from 'axios'
+import { scoreRisk, calculateRoute, PRESETS, type RiskData, type RouteResult } from './risk-engine'
 import { Flame, Droplets, Thermometer, MapPin, Navigation, Shield, AlertTriangle, ChevronDown, Loader2, Mountain, Waves, RotateCcw, Zap } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import './App.css'
-
-const API_BASE = import.meta.env.VITE_API_URL || '__PORT_8000__'
 
 // Fix leaflet default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -15,38 +13,6 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 })
-
-interface RiskData {
-  overall_risk: number
-  flood_risk: number
-  wildfire_risk: number
-  heat_risk: number
-  coastal_exposure: number
-  elevation_ft: number
-  risk_level: string
-}
-
-interface RouteData {
-  coordinates: number[][]
-  risks: RiskData[]
-  total_risk: number
-  distance_mi: number
-}
-
-interface RouteResult {
-  standard: RouteData
-  climate_safe?: RouteData
-  risk_reduction_pct?: number
-}
-
-interface Preset {
-  name: string
-  from_lat: number
-  from_lng: number
-  to_lat: number
-  to_lng: number
-  description: string
-}
 
 function getRiskColor(risk: number): string {
   if (risk < 20) return '#22c55e'
@@ -116,15 +82,8 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [selectMode, setSelectMode] = useState<'origin' | 'destination'>('origin')
   const [showPresets, setShowPresets] = useState(false)
-  const [presets] = useState<Preset[]>([
-    { name: "LA to Phoenix", from_lat: 34.0522, from_lng: -118.2437, to_lat: 33.4484, to_lng: -112.0740, description: "Wildfire corridor" },
-    { name: "Miami to Atlanta", from_lat: 25.7617, from_lng: -80.1918, to_lat: 33.7490, to_lng: -84.3880, description: "Hurricane belt" },
-    { name: "Houston to Dallas", from_lat: 29.7604, from_lng: -95.3698, to_lat: 32.7767, to_lng: -96.7970, description: "Heat + flood zone" },
-    { name: "SF to Portland", from_lat: 37.7749, from_lng: -122.4194, to_lat: 45.5152, to_lng: -122.6784, description: "Pacific wildfire" },
-    { name: "NYC to DC", from_lat: 40.7128, from_lng: -74.0060, to_lat: 38.9072, to_lng: -77.0369, description: "Coastal flooding" },
-  ])
 
-  const handleMapClick = useCallback(async (lat: number, lng: number) => {
+  const handleMapClick = useCallback((lat: number, lng: number) => {
     if (selectMode === 'origin') {
       setOrigin([lat, lng])
       setSelectMode('destination')
@@ -133,52 +92,31 @@ export default function App() {
       setDestination([lat, lng])
       setSelectMode('origin')
     }
-
-    // Also get risk for the clicked point
-    try {
-      const res = await axios.get(`${API_BASE}/api/risk`, { params: { lat, lng } })
-      setPointRisk(res.data)
-    } catch (e) {
-      console.error('Risk fetch failed', e)
-    }
+    // Score risk for clicked point (instant, no API call)
+    setPointRisk(scoreRisk(lat, lng))
   }, [selectMode])
 
-  const calculateRoute = useCallback(async () => {
+  const doCalculateRoute = useCallback(() => {
     if (!origin || !destination) return
     setLoading(true)
-    try {
-      const res = await axios.get(`${API_BASE}/api/route`, {
-        params: {
-          from_lat: origin[0], from_lng: origin[1],
-          to_lat: destination[0], to_lng: destination[1],
-          mode: 'climate-safe'
-        }
-      })
-      setRoute(res.data)
-    } catch (e) {
-      console.error('Route fetch failed', e)
-    }
-    setLoading(false)
+    // Use requestAnimationFrame to let the UI update before heavy computation
+    requestAnimationFrame(() => {
+      const result = calculateRoute(origin[0], origin[1], destination[0], destination[1])
+      setRoute(result)
+      setLoading(false)
+    })
   }, [origin, destination])
 
-  const loadPreset = useCallback(async (preset: Preset) => {
+  const loadPreset = useCallback((preset: typeof PRESETS[0]) => {
     setOrigin([preset.from_lat, preset.from_lng])
     setDestination([preset.to_lat, preset.to_lng])
     setShowPresets(false)
     setLoading(true)
-    try {
-      const res = await axios.get(`${API_BASE}/api/route`, {
-        params: {
-          from_lat: preset.from_lat, from_lng: preset.from_lng,
-          to_lat: preset.to_lat, to_lng: preset.to_lng,
-          mode: 'climate-safe'
-        }
-      })
-      setRoute(res.data)
-    } catch (e) {
-      console.error('Route fetch failed', e)
-    }
-    setLoading(false)
+    requestAnimationFrame(() => {
+      const result = calculateRoute(preset.from_lat, preset.from_lng, preset.to_lat, preset.to_lng)
+      setRoute(result)
+      setLoading(false)
+    })
   }, [])
 
   const reset = () => {
@@ -212,13 +150,13 @@ export default function App() {
               <RotateCcw size={12} /> Reset
             </button>
           </div>
-          
+
           <div className="space-y-2">
             <button
               onClick={() => { setSelectMode('origin'); setRoute(null) }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all text-left ${
-                selectMode === 'origin' 
-                  ? 'border-emerald-500/40 bg-emerald-500/5' 
+                selectMode === 'origin'
+                  ? 'border-emerald-500/40 bg-emerald-500/5'
                   : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700'
               }`}
             >
@@ -230,8 +168,8 @@ export default function App() {
             <button
               onClick={() => { setSelectMode('destination'); setRoute(null) }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all text-left ${
-                selectMode === 'destination' 
-                  ? 'border-red-500/40 bg-red-500/5' 
+                selectMode === 'destination'
+                  ? 'border-red-500/40 bg-red-500/5'
                   : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700'
               }`}
             >
@@ -243,7 +181,7 @@ export default function App() {
           </div>
 
           <button
-            onClick={calculateRoute}
+            onClick={doCalculateRoute}
             disabled={!origin || !destination || loading}
             className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-sm font-medium transition-all flex items-center justify-center gap-2"
           >
@@ -262,7 +200,7 @@ export default function App() {
             </button>
             {showPresets && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden shadow-xl z-50">
-                {presets.map((p, i) => (
+                {PRESETS.map((p, i) => (
                   <button
                     key={i}
                     onClick={() => loadPreset(p)}
@@ -282,7 +220,7 @@ export default function App() {
           {route && (
             <>
               {/* Risk Reduction Banner */}
-              {route.climate_safe && route.risk_reduction_pct && (
+              {route.climate_safe && route.risk_reduction_pct !== undefined && (
                 <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Shield size={16} className="text-emerald-400" />
@@ -296,7 +234,6 @@ export default function App() {
 
               {/* Route Comparison */}
               <div className="grid grid-cols-2 gap-3">
-                {/* Standard Route */}
                 <div className="bg-zinc-900/80 border border-zinc-800 rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-3">
                     <div className="w-3 h-0.5 bg-red-500 rounded" />
@@ -316,7 +253,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Climate-Safe Route */}
                 {route.climate_safe && (
                   <div className="bg-zinc-900/80 border border-emerald-500/20 rounded-lg p-3">
                     <div className="flex items-center gap-2 mb-3">
@@ -339,7 +275,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* Risk Breakdown for Climate-Safe Route */}
+              {/* Risk Breakdown */}
               {route.climate_safe && route.climate_safe.risks.length > 0 && (() => {
                 const avgRisks = {
                   flood: route.climate_safe.risks.reduce((s, r) => s + r.flood_risk, 0) / route.climate_safe.risks.length,
@@ -360,7 +296,7 @@ export default function App() {
             </>
           )}
 
-          {/* Point Risk (when clicking without a route) */}
+          {/* Point Risk */}
           {!route && pointRisk && (
             <div className="bg-zinc-900/80 border border-zinc-800 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
@@ -416,33 +352,26 @@ export default function App() {
           <MapClickHandler onMapClick={handleMapClick} />
           {route && <FitBounds route={route} />}
 
-          {/* Origin marker */}
           {origin && (
             <CircleMarker
               center={origin}
               radius={8}
               pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.9, weight: 2 }}
             >
-              <Popup>
-                <span style={{ color: '#000' }}>Origin: {origin[0].toFixed(4)}, {origin[1].toFixed(4)}</span>
-              </Popup>
+              <Popup><span style={{ color: '#000' }}>Origin: {origin[0].toFixed(4)}, {origin[1].toFixed(4)}</span></Popup>
             </CircleMarker>
           )}
 
-          {/* Destination marker */}
           {destination && (
             <CircleMarker
               center={destination}
               radius={8}
               pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.9, weight: 2 }}
             >
-              <Popup>
-                <span style={{ color: '#000' }}>Destination: {destination[0].toFixed(4)}, {destination[1].toFixed(4)}</span>
-              </Popup>
+              <Popup><span style={{ color: '#000' }}>Destination: {destination[0].toFixed(4)}, {destination[1].toFixed(4)}</span></Popup>
             </CircleMarker>
           )}
 
-          {/* Standard route (red) */}
           {route && (
             <Polyline
               positions={route.standard.coordinates.map(c => [c[0], c[1]] as [number, number])}
@@ -450,7 +379,6 @@ export default function App() {
             />
           )}
 
-          {/* Climate-safe route (green) */}
           {route?.climate_safe && (
             <Polyline
               positions={route.climate_safe.coordinates.map(c => [c[0], c[1]] as [number, number])}
@@ -458,10 +386,9 @@ export default function App() {
             />
           )}
 
-          {/* Risk markers along routes */}
           {route?.climate_safe?.coordinates.map((coord, i) => {
             const risk = route.climate_safe!.risks[i]
-            if (!risk || i % 3 !== 0) return null // Show every 3rd point
+            if (!risk || i % 3 !== 0) return null
             return (
               <CircleMarker
                 key={`risk-${i}`}
@@ -518,8 +445,8 @@ export default function App() {
         {/* Selection hint */}
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-zinc-900/90 backdrop-blur-sm border border-zinc-800 rounded-full px-4 py-2 z-[1000]">
           <span className="text-xs text-zinc-400">
-            {selectMode === 'origin' 
-              ? 'Click map to set origin point' 
+            {selectMode === 'origin'
+              ? 'Click map to set origin point'
               : 'Click map to set destination point'}
           </span>
         </div>

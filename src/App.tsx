@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMapEvents, useMap, Marker } from 'react-leaflet'
 import L from 'leaflet'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, type PanInfo } from 'framer-motion'
 import {
   scoreRisk, calculateRoute, calculateMultiStopRoute, optimizeStopOrder,
   geocodeSearch,
@@ -23,6 +23,20 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 })
+
+// --- Hooks ---
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return isMobile
+}
+
+// --- Helpers ---
 
 function createStopIcon(index: number, color: string) {
   return L.divIcon({
@@ -56,7 +70,7 @@ function getRiskLabel(risk: number): string {
   return 'Severe'
 }
 
-// --- Components ---
+// --- Sub-Components ---
 
 function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
   useMapEvents({ click(e) { onMapClick(e.latlng.lat, e.latlng.lng) } })
@@ -205,6 +219,335 @@ function StatCard({ label, value, unit, icon: Icon }: { label: string, value: st
   )
 }
 
+// --- PANEL CONTENT (shared between sidebar and bottom sheet) ---
+
+function PanelContent({
+  mode, setMode: _setMode, reset: _reset, origin, setOrigin, destination, setDestination,
+  tripStops, setTripStops, route, setRoute, multiStop, setMultiStop,
+  pointRisk, clickedPoint, loading, optimizing,
+  doCalculateRoute, doCalculateTrip, doOptimize, loadPreset, loadTripPreset,
+  removeStop, routeColors, isMobile
+}: any) {
+  return (
+    <div className={`space-y-4 ${isMobile ? 'px-4 pb-8' : 'px-5 pb-5'}`}>
+      {/* === ROUTE MODE === */}
+      {mode === 'route' && (
+        <>
+          <div className="space-y-2.5">
+            <AddressInput
+              value={origin?.label || ''}
+              placeholder="Search origin address..."
+              color="#34d399"
+              onSelect={(lat: number, lng: number, name: string) => { setOrigin({ lat, lng, label: name }); setRoute(null) }}
+              onClear={() => { setOrigin(null); setRoute(null) }}
+            />
+            <div className="flex justify-center">
+              <div className="w-[1px] h-3 bg-white/[0.06]" />
+            </div>
+            <AddressInput
+              value={destination?.label || ''}
+              placeholder="Search destination address..."
+              color="#f87171"
+              onSelect={(lat: number, lng: number, name: string) => { setDestination({ lat, lng, label: name }); setRoute(null) }}
+              onClear={() => { setDestination(null); setRoute(null) }}
+            />
+          </div>
+
+          <button
+            onClick={doCalculateRoute}
+            disabled={!origin || !destination || loading}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:from-zinc-800 disabled:to-zinc-800 disabled:text-zinc-600 text-sm font-medium transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 disabled:shadow-none"
+          >
+            {loading ? <Loader2 size={16} className="animate-spin" /> : <Navigation size={15} />}
+            {loading ? 'Analyzing...' : 'Find Climate-Safe Route'}
+          </button>
+
+          {/* Demo Routes */}
+          {!route && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Zap size={11} className="text-zinc-500" />
+                <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Demo Routes</span>
+              </div>
+              <div className="grid grid-cols-1 gap-1.5">
+                {PRESETS.map((p, i) => (
+                  <button
+                    key={i}
+                    onClick={() => loadPreset(p)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.08] transition-all text-left group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-zinc-300 font-medium">{p.name}</div>
+                      <div className="text-[10px] text-zinc-600">{p.from_label} to {p.to_label}</div>
+                    </div>
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/[0.04] text-zinc-500 font-medium flex-shrink-0 ml-2">{p.tag}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Route Results */}
+          <AnimatePresence>
+            {route && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                className="space-y-3"
+              >
+                {route.climate_safe && route.risk_reduction_pct !== undefined && route.risk_reduction_pct > 0 && (
+                  <div className="relative overflow-hidden rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-4">
+                    <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-transparent" />
+                    <div className="relative">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Shield size={14} className="text-emerald-400" />
+                        <span className="text-xs font-medium text-emerald-400">Climate-Safe Route Found</span>
+                      </div>
+                      <div className="text-3xl font-bold font-mono tracking-tight gradient-text-safe tabular-nums">
+                        {route.risk_reduction_pct.toFixed(1)}%
+                      </div>
+                      <div className="text-[10px] text-emerald-400/60 mt-0.5">risk reduction vs standard route</div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <StatCard label="Safe Distance" value={route.climate_safe?.distance_mi || route.standard.distance_mi} unit="mi" icon={RouteIcon} />
+                  <StatCard label="Est. Time" value={route.climate_safe?.estimated_time_hrs || route.standard.estimated_time_hrs} unit="hrs" icon={Clock} />
+                  <StatCard label="Avg Risk" value={route.climate_safe?.total_risk || route.standard.total_risk} unit="/100" icon={Gauge} />
+                  <StatCard label="Std Risk" value={route.standard.total_risk} unit="/100" icon={AlertTriangle} />
+                </div>
+
+                {route.climate_safe && route.climate_safe.risks.length > 0 && (() => {
+                  const r = route.climate_safe.risks
+                  const avg = {
+                    flood: r.reduce((s: number, x: any) => s + x.flood_risk, 0) / r.length,
+                    wildfire: r.reduce((s: number, x: any) => s + x.wildfire_risk, 0) / r.length,
+                    heat: r.reduce((s: number, x: any) => s + x.heat_risk, 0) / r.length,
+                    coastal: r.reduce((s: number, x: any) => s + x.coastal_exposure, 0) / r.length,
+                  }
+                  return (
+                    <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4 space-y-1">
+                      <h3 className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium mb-2">Risk Breakdown</h3>
+                      <RiskMeter label="Flood Risk" value={avg.flood} icon={Droplets} color="text-blue-400" />
+                      <RiskMeter label="Wildfire Risk" value={avg.wildfire} icon={Flame} color="text-orange-400" />
+                      <RiskMeter label="Heat Anomaly" value={avg.heat} icon={Thermometer} color="text-red-400" />
+                      <RiskMeter label="Coastal Exposure" value={avg.coastal} icon={Waves} color="text-cyan-400" />
+                    </div>
+                  )
+                })()}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
+
+      {/* === TRIP MODE === */}
+      {mode === 'trip' && (
+        <>
+          <div className="space-y-2">
+            {tripStops.map((stop: any, i: number) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="flex-1">
+                  <AddressInput
+                    value={stop.label}
+                    placeholder={i === 0 ? 'Starting point...' : i === tripStops.length - 1 ? 'Final destination...' : `Stop ${i + 1}...`}
+                    color={routeColors[i % routeColors.length]}
+                    index={i}
+                    onSelect={(lat: number, lng: number, name: string) => {
+                      setTripStops((prev: any[]) => prev.map((s: any, j: number) => j === i ? { lat, lng, label: name } : s))
+                      setMultiStop(null)
+                    }}
+                    onClear={() => removeStop(i)}
+                  />
+                </div>
+                {tripStops.length > 2 && (
+                  <button onClick={() => removeStop(i)} className="text-zinc-600 hover:text-red-400 transition-colors p-1">
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              onClick={() => setTripStops((prev: any[]) => [...prev, { lat: 0, lng: 0, label: '' }])}
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-white/[0.08] hover:border-emerald-500/30 text-xs text-zinc-500 hover:text-emerald-400 transition-all"
+            >
+              <Plus size={13} /> Add Stop
+            </button>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={doCalculateTrip}
+              disabled={tripStops.filter((s: any) => s.lat !== 0).length < 2 || loading}
+              className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:from-zinc-800 disabled:to-zinc-800 disabled:text-zinc-600 text-sm font-medium transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 disabled:shadow-none"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <RouteIcon size={15} />}
+              {loading ? 'Planning...' : 'Plan Trip'}
+            </button>
+            <button
+              onClick={doOptimize}
+              disabled={tripStops.filter((s: any) => s.lat !== 0).length < 3 || optimizing}
+              className="px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] disabled:opacity-30 text-sm font-medium transition-all flex items-center gap-2"
+              title="Optimize stop order"
+            >
+              {optimizing ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} className="text-amber-400" />}
+            </button>
+          </div>
+
+          {/* Trip Presets */}
+          {!multiStop && tripStops.length === 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Zap size={11} className="text-zinc-500" />
+                <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Demo Trips</span>
+              </div>
+              {ROAD_TRIP_PRESETS.map((p, i) => (
+                <button
+                  key={i}
+                  onClick={() => loadTripPreset(p)}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.08] transition-all text-left"
+                >
+                  <div>
+                    <div className="text-xs text-zinc-300 font-medium">{p.name}</div>
+                    <div className="text-[10px] text-zinc-600">{p.stops.length} stops</div>
+                  </div>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/[0.04] text-zinc-500 font-medium">{p.tag}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Multi-Stop Results */}
+          <AnimatePresence>
+            {multiStop && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                className="space-y-3"
+              >
+                <div className="relative overflow-hidden rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-4">
+                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-transparent" />
+                  <div className="relative">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Shield size={14} className="text-emerald-400" />
+                      <span className="text-xs font-medium text-emerald-400">Trip Optimized</span>
+                    </div>
+                    <div className="text-2xl font-bold font-mono tracking-tight gradient-text-safe tabular-nums">
+                      {multiStop.total_risk_reduction_pct.toFixed(1)}%
+                    </div>
+                    <div className="text-[10px] text-emerald-400/60 mt-0.5">avg risk reduction across all legs</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <StatCard label="Total Dist" value={multiStop.total_distance_mi} unit="mi" icon={RouteIcon} />
+                  <StatCard label="Est. Time" value={multiStop.total_time_hrs} unit="hrs" icon={Clock} />
+                  <StatCard label="Avg Risk" value={multiStop.avg_risk} unit="/100" icon={Gauge} />
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Leg Details</h3>
+                  {multiStop.legs.map((leg: any, i: number) => (
+                    <div key={i} className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-3 flex items-center gap-3">
+                      <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: routeColors[i % routeColors.length] }}>
+                        {i + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-zinc-300 font-medium truncate">
+                          {tripStops[i]?.label || `Stop ${i + 1}`}
+                          <ArrowRight size={10} className="inline mx-1 text-zinc-600" />
+                          {tripStops[i + 1]?.label || `Stop ${i + 2}`}
+                        </div>
+                        <div className="flex gap-3 mt-0.5">
+                          <span className="text-[10px] text-zinc-500">{leg.climate_safe?.distance_mi || leg.standard.distance_mi} mi</span>
+                          <span className="text-[10px] font-medium" style={{ color: getRiskColor(leg.climate_safe?.total_risk || leg.standard.total_risk) }}>
+                            Risk: {leg.climate_safe?.total_risk || leg.standard.total_risk}
+                          </span>
+                          {leg.risk_reduction_pct !== undefined && leg.risk_reduction_pct > 0 && (
+                            <span className="text-[10px] text-emerald-400">-{leg.risk_reduction_pct.toFixed(0)}%</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
+
+      {/* === EXPLORE MODE === */}
+      {mode === 'explore' && (
+        <>
+          {!pointRisk && (
+            <div className="text-center py-10">
+              <div className="w-12 h-12 rounded-2xl bg-white/[0.03] flex items-center justify-center mx-auto mb-4">
+                <MapPinned size={20} className="text-zinc-600" />
+              </div>
+              <p className="text-sm text-zinc-500 leading-relaxed">
+                {isMobile ? 'Tap anywhere on the map to analyze climate risk.' : 'Click anywhere on the map to analyze climate risk at that location.'}
+              </p>
+            </div>
+          )}
+
+          <AnimatePresence>
+            {pointRisk && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                className="space-y-3"
+              >
+                <div className="relative overflow-hidden rounded-xl border border-white/[0.04] p-4"
+                  style={{ background: `linear-gradient(135deg, ${getRiskColor(pointRisk.overall_risk)}08, transparent)`, borderColor: `${getRiskColor(pointRisk.overall_risk)}20` }}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Risk Assessment</span>
+                    <span className="text-[10px] px-2.5 py-0.5 rounded-full font-semibold" style={{
+                      background: `${getRiskColor(pointRisk.overall_risk)}15`,
+                      color: getRiskColor(pointRisk.overall_risk),
+                      border: `1px solid ${getRiskColor(pointRisk.overall_risk)}25`
+                    }}>
+                      {getRiskLabel(pointRisk.overall_risk)}
+                    </span>
+                  </div>
+                  <div className="text-4xl font-bold font-mono tracking-tight tabular-nums" style={{ color: getRiskColor(pointRisk.overall_risk) }}>
+                    {pointRisk.overall_risk}
+                    <span className="text-sm text-zinc-600 ml-1 font-normal">/100</span>
+                  </div>
+                  {clickedPoint && (
+                    <div className="text-[10px] text-zinc-600 mt-2 font-mono">
+                      {clickedPoint[0].toFixed(4)}, {clickedPoint[1].toFixed(4)}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4 space-y-1">
+                  <RiskMeter label="Flood Risk" value={pointRisk.flood_risk} icon={Droplets} color="text-blue-400" />
+                  <RiskMeter label="Wildfire Risk" value={pointRisk.wildfire_risk} icon={Flame} color="text-orange-400" />
+                  <RiskMeter label="Heat Anomaly" value={pointRisk.heat_risk} icon={Thermometer} color="text-red-400" />
+                  <RiskMeter label="Coastal Exposure" value={pointRisk.coastal_exposure} icon={Waves} color="text-cyan-400" />
+                </div>
+
+                <div className="flex items-center gap-2 px-1">
+                  <Mountain size={13} className="text-zinc-600" />
+                  <span className="text-[11px] text-zinc-500">
+                    Elevation: <span className="text-zinc-300 font-mono">{pointRisk.elevation_ft.toLocaleString()} ft</span>
+                  </span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
+    </div>
+  )
+}
+
 // --- MAIN APP ---
 
 type AppMode = 'route' | 'trip' | 'explore'
@@ -216,6 +559,7 @@ interface Stop {
 }
 
 export default function App() {
+  const isMobile = useIsMobile()
   const [mode, setMode] = useState<AppMode>('route')
   const [origin, setOrigin] = useState<Stop | null>(null)
   const [destination, setDestination] = useState<Stop | null>(null)
@@ -229,10 +573,14 @@ export default function App() {
   const [showPanel, setShowPanel] = useState(true)
   const [optimizing, setOptimizing] = useState(false)
 
+  // Mobile bottom sheet state: 'peek' (collapsed showing tabs), 'half' (half screen), 'full' (full screen)
+  const [sheetState, setSheetState] = useState<'peek' | 'half' | 'full'>('half')
+
   const handleMapClick = useCallback((lat: number, lng: number) => {
     if (mode === 'explore') {
       setPointRisk(scoreRisk(lat, lng))
       setClickedPoint([lat, lng])
+      if (isMobile) setSheetState('half')
     } else if (mode === 'route') {
       if (!origin) {
         setOrigin({ lat, lng, label: `${lat.toFixed(4)}, ${lng.toFixed(4)}` })
@@ -242,7 +590,7 @@ export default function App() {
     } else if (mode === 'trip') {
       setTripStops(prev => [...prev, { lat, lng, label: `${lat.toFixed(4)}, ${lng.toFixed(4)}` }])
     }
-  }, [mode, origin, destination])
+  }, [mode, origin, destination, isMobile])
 
   const doCalculateRoute = useCallback(() => {
     if (!origin || !destination) return
@@ -251,6 +599,7 @@ export default function App() {
       const result = calculateRoute(origin.lat, origin.lng, destination.lat, destination.lng)
       setRoute(result)
       setLoading(false)
+      if (isMobile) setSheetState('half')
       const allCoords = [
         ...result.standard.coordinates,
         ...(result.climate_safe?.coordinates || [])
@@ -259,7 +608,7 @@ export default function App() {
         setMapBounds(L.latLngBounds(allCoords.map(c => [c[0], c[1]] as [number, number])))
       }
     })
-  }, [origin, destination])
+  }, [origin, destination, isMobile])
 
   const doCalculateTrip = useCallback(() => {
     if (tripStops.length < 2) return
@@ -268,6 +617,7 @@ export default function App() {
       const result = calculateMultiStopRoute(tripStops.map(s => [s.lat, s.lng] as [number, number]))
       setMultiStop(result)
       setLoading(false)
+      if (isMobile) setSheetState('half')
       const allCoords = result.legs.flatMap(l =>
         (l.climate_safe?.coordinates || l.standard.coordinates)
       )
@@ -275,7 +625,7 @@ export default function App() {
         setMapBounds(L.latLngBounds(allCoords.map(c => [c[0], c[1]] as [number, number])))
       }
     })
-  }, [tripStops])
+  }, [tripStops, isMobile])
 
   const doOptimize = useCallback(() => {
     if (tripStops.length < 3) return
@@ -296,6 +646,7 @@ export default function App() {
       const result = calculateRoute(preset.from_lat, preset.from_lng, preset.to_lat, preset.to_lng)
       setRoute(result)
       setLoading(false)
+      if (isMobile) setSheetState('half')
       const allCoords = [
         ...result.standard.coordinates,
         ...(result.climate_safe?.coordinates || [])
@@ -304,7 +655,7 @@ export default function App() {
         setMapBounds(L.latLngBounds(allCoords.map(c => [c[0], c[1]] as [number, number])))
       }
     })
-  }, [])
+  }, [isMobile])
 
   const loadTripPreset = useCallback((preset: typeof ROAD_TRIP_PRESETS[0]) => {
     const stops = preset.stops.map(s => ({ lat: s.lat, lng: s.lng, label: s.label }))
@@ -315,12 +666,13 @@ export default function App() {
       const result = calculateMultiStopRoute(stops.map(s => [s.lat, s.lng] as [number, number]))
       setMultiStop(result)
       setLoading(false)
+      if (isMobile) setSheetState('half')
       const allCoords = result.legs.flatMap(l => (l.climate_safe?.coordinates || l.standard.coordinates))
       if (allCoords.length > 0) {
         setMapBounds(L.latLngBounds(allCoords.map(c => [c[0], c[1]] as [number, number])))
       }
     })
-  }, [])
+  }, [isMobile])
 
   const reset = () => {
     setOrigin(null)
@@ -340,421 +692,142 @@ export default function App() {
 
   const routeColors = ['#34d399', '#60a5fa', '#c084fc', '#fb923c', '#f87171', '#facc15', '#2dd4bf', '#e879f9']
 
+  // Shared panel props
+  const panelProps = {
+    mode, setMode, reset, origin, setOrigin, destination, setDestination,
+    tripStops, setTripStops, route, setRoute, multiStop, setMultiStop,
+    pointRisk, clickedPoint, loading, optimizing,
+    doCalculateRoute, doCalculateTrip, doOptimize, loadPreset, loadTripPreset,
+    removeStop, routeColors, isMobile
+  }
+
+  // Sheet height mapping
+  const sheetHeights = {
+    peek: 140,
+    half: Math.round(window.innerHeight * 0.5),
+    full: window.innerHeight - 40,
+  }
+
+  const cycleSheet = () => {
+    if (sheetState === 'peek') setSheetState('half')
+    else if (sheetState === 'half') setSheetState('full')
+    else setSheetState('peek')
+  }
+
+  const handleSheetDragEnd = (_: any, info: PanInfo) => {
+    const vy = info.velocity.y
+    const dy = info.offset.y
+    if (vy > 400 || dy > 80) {
+      // Dragging down
+      if (sheetState === 'full') setSheetState('half')
+      else setSheetState('peek')
+    } else if (vy < -400 || dy < -80) {
+      // Dragging up
+      if (sheetState === 'peek') setSheetState('half')
+      else setSheetState('full')
+    }
+  }
+
+  // Map hint text
+  const hintText = (() => {
+    if (mode === 'explore') return 'Tap anywhere to analyze climate risk'
+    if (mode === 'route' && !origin) return 'Search or tap to set origin'
+    if (mode === 'route' && origin && !destination) return 'Tap to set destination'
+    if (mode === 'route' && origin && destination && !route) return 'Tap "Find Climate-Safe Route"'
+    if (mode === 'route' && route) return 'Route analyzed. Green = safer.'
+    if (mode === 'trip' && tripStops.length === 0) return 'Add stops or try a demo trip'
+    if (mode === 'trip' && tripStops.length > 0 && !multiStop) return 'Tap map to add stops'
+    if (mode === 'trip' && multiStop) return `${tripStops.length} stops optimized`
+    return ''
+  })()
+
   return (
-    <div className="h-screen w-screen flex text-zinc-100 overflow-hidden" style={{ background: 'var(--surface-base)' }}>
-      {/* Sidebar */}
-      <AnimatePresence mode="wait">
-        {showPanel && (
-          <motion.div
-            initial={{ x: -380, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: -380, opacity: 0 }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="w-[380px] flex-shrink-0 flex flex-col glass-sidebar z-20 relative"
-          >
-            {/* Header */}
-            <div className="px-5 pt-5 pb-4">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                    <Shield size={16} className="text-white" />
+    <div className="h-screen w-screen flex flex-col md:flex-row text-zinc-100 overflow-hidden" style={{ background: 'var(--surface-base)' }}>
+
+      {/* === DESKTOP SIDEBAR === */}
+      {!isMobile && (
+        <>
+          <AnimatePresence mode="wait">
+            {showPanel && (
+              <motion.div
+                initial={{ x: -380, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -380, opacity: 0 }}
+                transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+                className="w-[380px] flex-shrink-0 flex flex-col glass-sidebar z-20 relative"
+              >
+                {/* Header */}
+                <div className="px-5 pt-5 pb-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                        <Shield size={16} className="text-white" />
+                      </div>
+                      <div>
+                        <h1 className="text-[15px] font-semibold tracking-tight">ClimaRoute</h1>
+                        <p className="text-[10px] text-zinc-500 font-medium">AI Climate Risk Router</p>
+                      </div>
+                    </div>
+                    <button onClick={reset} className="text-[10px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1 transition-colors px-2 py-1 rounded-md hover:bg-white/[0.04]">
+                      <RotateCcw size={11} /> Reset
+                    </button>
                   </div>
-                  <div>
-                    <h1 className="text-[15px] font-semibold tracking-tight">ClimaRoute</h1>
-                    <p className="text-[10px] text-zinc-500 font-medium">AI Climate Risk Router</p>
+
+                  {/* Mode Tabs */}
+                  <div className="flex bg-white/[0.03] rounded-lg p-0.5 gap-0.5">
+                    {([
+                      { id: 'route' as AppMode, label: 'Route', icon: Navigation },
+                      { id: 'trip' as AppMode, label: 'Road Trip', icon: RouteIcon },
+                      { id: 'explore' as AppMode, label: 'Explore', icon: MapPinned },
+                    ]).map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => { setMode(tab.id); reset() }}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-all duration-200 ${
+                          mode === tab.id
+                            ? 'bg-emerald-500/15 text-emerald-400 shadow-sm'
+                            : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]'
+                        }`}
+                      >
+                        <tab.icon size={13} />
+                        {tab.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
-                <button onClick={reset} className="text-[10px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1 transition-colors px-2 py-1 rounded-md hover:bg-white/[0.04]">
-                  <RotateCcw size={11} /> Reset
-                </button>
-              </div>
 
-              {/* Mode Tabs */}
-              <div className="flex bg-white/[0.03] rounded-lg p-0.5 gap-0.5">
-                {([
-                  { id: 'route' as AppMode, label: 'Route', icon: Navigation },
-                  { id: 'trip' as AppMode, label: 'Road Trip', icon: RouteIcon },
-                  { id: 'explore' as AppMode, label: 'Explore', icon: MapPinned },
-                ]).map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => { setMode(tab.id); reset() }}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-all duration-200 ${
-                      mode === tab.id
-                        ? 'bg-emerald-500/15 text-emerald-400 shadow-sm'
-                        : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]'
-                    }`}
-                  >
-                    <tab.icon size={13} />
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                  <PanelContent {...panelProps} />
+                </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-4 custom-scrollbar">
-              {/* === ROUTE MODE === */}
-              {mode === 'route' && (
-                <>
-                  <div className="space-y-2.5">
-                    <AddressInput
-                      value={origin?.label || ''}
-                      placeholder="Search origin address..."
-                      color="#34d399"
-                      onSelect={(lat, lng, name) => { setOrigin({ lat, lng, label: name }); setRoute(null) }}
-                      onClear={() => { setOrigin(null); setRoute(null) }}
-                    />
-                    <div className="flex justify-center">
-                      <div className="w-[1px] h-3 bg-white/[0.06]" />
-                    </div>
-                    <AddressInput
-                      value={destination?.label || ''}
-                      placeholder="Search destination address..."
-                      color="#f87171"
-                      onSelect={(lat, lng, name) => { setDestination({ lat, lng, label: name }); setRoute(null) }}
-                      onClear={() => { setDestination(null); setRoute(null) }}
-                    />
+                {/* Footer */}
+                <div className="px-5 py-3 border-t border-white/[0.04]" style={{ background: 'rgba(11, 15, 26, 0.95)' }}>
+                  <div className="flex items-center gap-1.5">
+                    <Info size={10} className="text-zinc-700" />
+                    <span className="text-[9px] text-zinc-600 leading-relaxed">Risk scores are ML-modeled estimates. Not for emergency decisions.</span>
                   </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-                  <button
-                    onClick={doCalculateRoute}
-                    disabled={!origin || !destination || loading}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:from-zinc-800 disabled:to-zinc-800 disabled:text-zinc-600 text-sm font-medium transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 disabled:shadow-none"
-                  >
-                    {loading ? <Loader2 size={16} className="animate-spin" /> : <Navigation size={15} />}
-                    {loading ? 'Analyzing route...' : 'Find Climate-Safe Route'}
-                  </button>
+          {/* Toggle Panel Button */}
+          <button
+            onClick={() => setShowPanel(!showPanel)}
+            className="absolute top-4 left-4 z-30 rounded-lg p-2 hover:bg-white/[0.08] transition-all"
+            style={{ left: showPanel ? '392px' : '16px', background: 'rgba(11, 15, 26, 0.88)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <ChevronRight size={16} className={`text-zinc-400 transition-transform duration-300 ${showPanel ? 'rotate-180' : ''}`} />
+          </button>
+        </>
+      )}
 
-                  {/* Demo Routes */}
-                  {!route && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Zap size={11} className="text-zinc-500" />
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Demo Routes</span>
-                      </div>
-                      <div className="grid grid-cols-1 gap-1.5">
-                        {PRESETS.map((p, i) => (
-                          <button
-                            key={i}
-                            onClick={() => loadPreset(p)}
-                            className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.08] transition-all text-left group"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <div className="text-xs text-zinc-300 font-medium">{p.name}</div>
-                              <div className="text-[10px] text-zinc-600">{p.from_label} to {p.to_label}</div>
-                            </div>
-                            <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/[0.04] text-zinc-500 font-medium flex-shrink-0 ml-2">{p.tag}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Route Results */}
-                  <AnimatePresence>
-                    {route && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                        className="space-y-3"
-                      >
-                        {route.climate_safe && route.risk_reduction_pct !== undefined && route.risk_reduction_pct > 0 && (
-                          <div className="relative overflow-hidden rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-4">
-                            <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-transparent" />
-                            <div className="relative">
-                              <div className="flex items-center gap-2 mb-2">
-                                <Shield size={14} className="text-emerald-400" />
-                                <span className="text-xs font-medium text-emerald-400">Climate-Safe Route Found</span>
-                              </div>
-                              <div className="text-3xl font-bold font-mono tracking-tight gradient-text-safe tabular-nums">
-                                {route.risk_reduction_pct.toFixed(1)}%
-                              </div>
-                              <div className="text-[10px] text-emerald-400/60 mt-0.5">risk reduction vs standard route</div>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <StatCard
-                            label="Safe Distance"
-                            value={route.climate_safe?.distance_mi || route.standard.distance_mi}
-                            unit="mi"
-                            icon={RouteIcon}
-                          />
-                          <StatCard
-                            label="Est. Time"
-                            value={route.climate_safe?.estimated_time_hrs || route.standard.estimated_time_hrs}
-                            unit="hrs"
-                            icon={Clock}
-                          />
-                          <StatCard
-                            label="Avg Risk"
-                            value={route.climate_safe?.total_risk || route.standard.total_risk}
-                            unit="/100"
-                            icon={Gauge}
-                          />
-                          <StatCard
-                            label="Std Risk"
-                            value={route.standard.total_risk}
-                            unit="/100"
-                            icon={AlertTriangle}
-                          />
-                        </div>
-
-                        {route.climate_safe && route.climate_safe.risks.length > 0 && (() => {
-                          const r = route.climate_safe.risks
-                          const avg = {
-                            flood: r.reduce((s, x) => s + x.flood_risk, 0) / r.length,
-                            wildfire: r.reduce((s, x) => s + x.wildfire_risk, 0) / r.length,
-                            heat: r.reduce((s, x) => s + x.heat_risk, 0) / r.length,
-                            coastal: r.reduce((s, x) => s + x.coastal_exposure, 0) / r.length,
-                          }
-                          return (
-                            <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4 space-y-1">
-                              <h3 className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium mb-2">Risk Breakdown</h3>
-                              <RiskMeter label="Flood Risk" value={avg.flood} icon={Droplets} color="text-blue-400" />
-                              <RiskMeter label="Wildfire Risk" value={avg.wildfire} icon={Flame} color="text-orange-400" />
-                              <RiskMeter label="Heat Anomaly" value={avg.heat} icon={Thermometer} color="text-red-400" />
-                              <RiskMeter label="Coastal Exposure" value={avg.coastal} icon={Waves} color="text-cyan-400" />
-                            </div>
-                          )
-                        })()}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </>
-              )}
-
-              {/* === TRIP MODE === */}
-              {mode === 'trip' && (
-                <>
-                  <div className="space-y-2">
-                    {tripStops.map((stop, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <div className="flex-1">
-                          <AddressInput
-                            value={stop.label}
-                            placeholder={i === 0 ? 'Starting point...' : i === tripStops.length - 1 ? 'Final destination...' : `Stop ${i + 1}...`}
-                            color={routeColors[i % routeColors.length]}
-                            index={i}
-                            onSelect={(lat, lng, name) => {
-                              setTripStops(prev => prev.map((s, j) => j === i ? { lat, lng, label: name } : s))
-                              setMultiStop(null)
-                            }}
-                            onClear={() => removeStop(i)}
-                          />
-                        </div>
-                        {tripStops.length > 2 && (
-                          <button onClick={() => removeStop(i)} className="text-zinc-600 hover:text-red-400 transition-colors p-1">
-                            <Trash2 size={13} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => setTripStops(prev => [...prev, { lat: 0, lng: 0, label: '' }])}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-white/[0.08] hover:border-emerald-500/30 text-xs text-zinc-500 hover:text-emerald-400 transition-all"
-                    >
-                      <Plus size={13} /> Add Stop
-                    </button>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={doCalculateTrip}
-                      disabled={tripStops.filter(s => s.lat !== 0).length < 2 || loading}
-                      className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:from-zinc-800 disabled:to-zinc-800 disabled:text-zinc-600 text-sm font-medium transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 disabled:shadow-none"
-                    >
-                      {loading ? <Loader2 size={16} className="animate-spin" /> : <RouteIcon size={15} />}
-                      {loading ? 'Planning...' : 'Plan Trip'}
-                    </button>
-                    <button
-                      onClick={doOptimize}
-                      disabled={tripStops.filter(s => s.lat !== 0).length < 3 || optimizing}
-                      className="px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] disabled:opacity-30 text-sm font-medium transition-all flex items-center gap-2"
-                      title="Optimize stop order for shortest distance"
-                    >
-                      {optimizing ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} className="text-amber-400" />}
-                    </button>
-                  </div>
-
-                  {/* Trip Presets */}
-                  {!multiStop && tripStops.length === 0 && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Zap size={11} className="text-zinc-500" />
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Demo Trips</span>
-                      </div>
-                      {ROAD_TRIP_PRESETS.map((p, i) => (
-                        <button
-                          key={i}
-                          onClick={() => loadTripPreset(p)}
-                          className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.08] transition-all text-left"
-                        >
-                          <div>
-                            <div className="text-xs text-zinc-300 font-medium">{p.name}</div>
-                            <div className="text-[10px] text-zinc-600">{p.stops.length} stops</div>
-                          </div>
-                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/[0.04] text-zinc-500 font-medium">{p.tag}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Multi-Stop Results */}
-                  <AnimatePresence>
-                    {multiStop && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                        className="space-y-3"
-                      >
-                        <div className="relative overflow-hidden rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-4">
-                          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-transparent" />
-                          <div className="relative">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Shield size={14} className="text-emerald-400" />
-                              <span className="text-xs font-medium text-emerald-400">Trip Optimized</span>
-                            </div>
-                            <div className="text-2xl font-bold font-mono tracking-tight gradient-text-safe tabular-nums">
-                              {multiStop.total_risk_reduction_pct.toFixed(1)}%
-                            </div>
-                            <div className="text-[10px] text-emerald-400/60 mt-0.5">avg risk reduction across all legs</div>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-2">
-                          <StatCard label="Total Dist" value={multiStop.total_distance_mi} unit="mi" icon={RouteIcon} />
-                          <StatCard label="Est. Time" value={multiStop.total_time_hrs} unit="hrs" icon={Clock} />
-                          <StatCard label="Avg Risk" value={multiStop.avg_risk} unit="/100" icon={Gauge} />
-                        </div>
-
-                        <div className="space-y-2">
-                          <h3 className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Leg Details</h3>
-                          {multiStop.legs.map((leg, i) => (
-                            <div key={i} className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-3 flex items-center gap-3">
-                              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: routeColors[i % routeColors.length] }}>
-                                {i + 1}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-xs text-zinc-300 font-medium truncate">
-                                  {tripStops[i]?.label || `Stop ${i + 1}`}
-                                  <ArrowRight size={10} className="inline mx-1 text-zinc-600" />
-                                  {tripStops[i + 1]?.label || `Stop ${i + 2}`}
-                                </div>
-                                <div className="flex gap-3 mt-0.5">
-                                  <span className="text-[10px] text-zinc-500">{leg.climate_safe?.distance_mi || leg.standard.distance_mi} mi</span>
-                                  <span className="text-[10px] font-medium" style={{ color: getRiskColor(leg.climate_safe?.total_risk || leg.standard.total_risk) }}>
-                                    Risk: {leg.climate_safe?.total_risk || leg.standard.total_risk}
-                                  </span>
-                                  {leg.risk_reduction_pct !== undefined && leg.risk_reduction_pct > 0 && (
-                                    <span className="text-[10px] text-emerald-400">-{leg.risk_reduction_pct.toFixed(0)}%</span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </>
-              )}
-
-              {/* === EXPLORE MODE === */}
-              {mode === 'explore' && (
-                <>
-                  {!pointRisk && (
-                    <div className="text-center py-10">
-                      <div className="w-12 h-12 rounded-2xl bg-white/[0.03] flex items-center justify-center mx-auto mb-4">
-                        <MapPinned size={20} className="text-zinc-600" />
-                      </div>
-                      <p className="text-sm text-zinc-500 leading-relaxed">
-                        Click anywhere on the map to analyze climate risk at that location.
-                      </p>
-                    </div>
-                  )}
-
-                  <AnimatePresence>
-                    {pointRisk && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                        className="space-y-3"
-                      >
-                        <div className="relative overflow-hidden rounded-xl border border-white/[0.04] p-4"
-                          style={{ background: `linear-gradient(135deg, ${getRiskColor(pointRisk.overall_risk)}08, transparent)`, borderColor: `${getRiskColor(pointRisk.overall_risk)}20` }}
-                        >
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Risk Assessment</span>
-                            <span className="text-[10px] px-2.5 py-0.5 rounded-full font-semibold" style={{
-                              background: `${getRiskColor(pointRisk.overall_risk)}15`,
-                              color: getRiskColor(pointRisk.overall_risk),
-                              border: `1px solid ${getRiskColor(pointRisk.overall_risk)}25`
-                            }}>
-                              {getRiskLabel(pointRisk.overall_risk)}
-                            </span>
-                          </div>
-                          <div className="text-4xl font-bold font-mono tracking-tight tabular-nums" style={{ color: getRiskColor(pointRisk.overall_risk) }}>
-                            {pointRisk.overall_risk}
-                            <span className="text-sm text-zinc-600 ml-1 font-normal">/100</span>
-                          </div>
-                          {clickedPoint && (
-                            <div className="text-[10px] text-zinc-600 mt-2 font-mono">
-                              {clickedPoint[0].toFixed(4)}, {clickedPoint[1].toFixed(4)}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4 space-y-1">
-                          <RiskMeter label="Flood Risk" value={pointRisk.flood_risk} icon={Droplets} color="text-blue-400" />
-                          <RiskMeter label="Wildfire Risk" value={pointRisk.wildfire_risk} icon={Flame} color="text-orange-400" />
-                          <RiskMeter label="Heat Anomaly" value={pointRisk.heat_risk} icon={Thermometer} color="text-red-400" />
-                          <RiskMeter label="Coastal Exposure" value={pointRisk.coastal_exposure} icon={Waves} color="text-cyan-400" />
-                        </div>
-
-                        <div className="flex items-center gap-2 px-1">
-                          <Mountain size={13} className="text-zinc-600" />
-                          <span className="text-[11px] text-zinc-500">
-                            Elevation: <span className="text-zinc-300 font-mono">{pointRisk.elevation_ft.toLocaleString()} ft</span>
-                          </span>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="px-5 py-3 border-t border-white/[0.04]" style={{ background: 'rgba(11, 15, 26, 0.95)' }}>
-              <div className="flex items-center gap-1.5">
-                <Info size={10} className="text-zinc-700" />
-                <span className="text-[9px] text-zinc-600 leading-relaxed">Risk scores are ML-modeled estimates. Not for emergency decisions.</span>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Toggle Panel Button */}
-      <button
-        onClick={() => setShowPanel(!showPanel)}
-        className="absolute top-4 left-4 z-30 rounded-lg p-2 hover:bg-white/[0.08] transition-all"
-        style={{ left: showPanel ? '392px' : '16px', background: 'rgba(11, 15, 26, 0.88)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.08)' }}
-      >
-        <ChevronRight size={16} className={`text-zinc-400 transition-transform duration-300 ${showPanel ? 'rotate-180' : ''}`} />
-      </button>
-
-      {/* Map */}
-      <div className="flex-1 relative">
+      {/* === MAP (always full area) === */}
+      <div className="flex-1 relative" style={{ zIndex: 1 }}>
         <MapContainer
           center={[39.0, -98.0]}
-          zoom={5}
+          zoom={isMobile ? 4 : 5}
           className="h-full w-full"
           zoomControl={false}
         >
@@ -842,51 +915,116 @@ export default function App() {
           )}
         </MapContainer>
 
-        {/* Map Legend */}
-        <div className="absolute bottom-6 right-6 rounded-xl px-4 py-3 z-[1000]" style={{ background: 'rgba(11, 15, 26, 0.88)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 8px 32px rgba(0,0,0,0.45)' }}>
-          <div className="text-[9px] text-zinc-500 uppercase tracking-wider mb-2 font-semibold">Risk Level</div>
-          <div className="flex gap-2.5">
-            {[
-              { label: 'Low', color: '#34d399' },
-              { label: 'Mod', color: '#a3e635' },
-              { label: 'Elev', color: '#fbbf24' },
-              { label: 'High', color: '#fb923c' },
-              { label: 'Severe', color: '#f87171' },
-            ].map(item => (
-              <div key={item.label} className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                <span className="text-[9px] text-zinc-500">{item.label}</span>
-              </div>
-            ))}
-          </div>
-          {mode === 'route' && (
-            <div className="flex gap-3 mt-2 pt-2 border-t border-white/[0.04]">
-              <div className="flex items-center gap-1.5">
-                <div className="w-4 h-[2px] bg-red-400 rounded opacity-50" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #f87171 0, #f87171 4px, transparent 4px, transparent 8px)' }} />
-                <span className="text-[9px] text-zinc-500">Standard</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-4 h-[2px] bg-emerald-400 rounded" />
-                <span className="text-[9px] text-zinc-500">Climate-Safe</span>
-              </div>
+        {/* Map Legend - desktop only */}
+        {!isMobile && (
+          <div className="absolute bottom-6 right-6 rounded-xl px-4 py-3 z-[1000]" style={{ background: 'rgba(11, 15, 26, 0.88)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 8px 32px rgba(0,0,0,0.45)' }}>
+            <div className="text-[9px] text-zinc-500 uppercase tracking-wider mb-2 font-semibold">Risk Level</div>
+            <div className="flex gap-2.5">
+              {[
+                { label: 'Low', color: '#34d399' },
+                { label: 'Mod', color: '#a3e635' },
+                { label: 'Elev', color: '#fbbf24' },
+                { label: 'High', color: '#fb923c' },
+                { label: 'Severe', color: '#f87171' },
+              ].map(item => (
+                <div key={item.label} className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                  <span className="text-[9px] text-zinc-500">{item.label}</span>
+                </div>
+              ))}
             </div>
-          )}
-        </div>
+            {mode === 'route' && (
+              <div className="flex gap-3 mt-2 pt-2 border-t border-white/[0.04]">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-4 h-[2px] bg-red-400 rounded opacity-50" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #f87171 0, #f87171 4px, transparent 4px, transparent 8px)' }} />
+                  <span className="text-[9px] text-zinc-500">Standard</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-4 h-[2px] bg-emerald-400 rounded" />
+                  <span className="text-[9px] text-zinc-500">Climate-Safe</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* Mode hint overlay */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 rounded-full px-4 py-2 z-[1000]" style={{ background: 'rgba(11, 15, 26, 0.85)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 24px rgba(0,0,0,0.4)' }}>
-          <span className="text-[11px] text-zinc-400 font-medium">
-            {mode === 'explore' && 'Click anywhere to analyze climate risk'}
-            {mode === 'route' && !origin && 'Search or click map to set origin'}
-            {mode === 'route' && origin && !destination && 'Search or click map to set destination'}
-            {mode === 'route' && origin && destination && !route && 'Click "Find Climate-Safe Route" to analyze'}
-            {mode === 'route' && route && 'Route analyzed. Green = safer path.'}
-            {mode === 'trip' && tripStops.length === 0 && 'Add stops or try a demo trip'}
-            {mode === 'trip' && tripStops.length > 0 && !multiStop && 'Click map to add stops, then Plan Trip'}
-            {mode === 'trip' && multiStop && `${tripStops.length}-stop trip planned. Each leg optimized for safety.`}
-          </span>
+        {/* Mode hint - positioned above bottom sheet on mobile */}
+        <div
+          className={`absolute left-1/2 -translate-x-1/2 rounded-full px-4 py-2 z-[1000] ${isMobile ? 'top-3' : 'top-4'}`}
+          style={{ background: 'rgba(11, 15, 26, 0.85)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 24px rgba(0,0,0,0.4)' }}
+        >
+          <span className="text-[11px] text-zinc-400 font-medium">{hintText}</span>
         </div>
       </div>
+
+      {/* === MOBILE BOTTOM SHEET === */}
+      {isMobile && (
+        <motion.div
+          className="fixed bottom-0 left-0 right-0 z-30 flex flex-col mobile-sheet"
+          style={{
+            background: '#0d1120',
+            borderTop: '1px solid rgba(255,255,255,0.12)',
+            boxShadow: '0 -8px 40px rgba(0,0,0,0.7), 0 -1px 0 rgba(52, 211, 153, 0.15)',
+            borderRadius: '20px 20px 0 0',
+          }}
+          animate={{ height: sheetHeights[sheetState] }}
+          transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+          drag="y"
+          dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={0.1}
+          onDragEnd={handleSheetDragEnd}
+        >
+          {/* Drag handle */}
+          <div
+            className="flex flex-col items-center pt-2.5 pb-1 cursor-grab active:cursor-grabbing flex-shrink-0"
+            onClick={cycleSheet}
+          >
+            <div className="w-9 h-1 rounded-full bg-white/[0.15] mb-2" />
+          </div>
+
+          {/* Header with tabs + reset */}
+          <div className="px-4 pb-3 flex-shrink-0">
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+                  <Shield size={12} className="text-white" />
+                </div>
+                <span className="text-sm font-semibold tracking-tight">ClimaRoute</span>
+              </div>
+              <button onClick={reset} className="text-[10px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-white/[0.04]">
+                <RotateCcw size={10} /> Reset
+              </button>
+            </div>
+
+            {/* Mode Tabs */}
+            <div className="flex bg-white/[0.03] rounded-lg p-0.5 gap-0.5">
+              {([
+                { id: 'route' as AppMode, label: 'Route', icon: Navigation },
+                { id: 'trip' as AppMode, label: 'Trip', icon: RouteIcon },
+                { id: 'explore' as AppMode, label: 'Explore', icon: MapPinned },
+              ]).map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => { setMode(tab.id); reset() }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-all duration-200 ${
+                    mode === tab.id
+                      ? 'bg-emerald-500/15 text-emerald-400 shadow-sm'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  <tab.icon size={12} />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Scrollable content */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar overscroll-contain">
+            <PanelContent {...panelProps} />
+          </div>
+        </motion.div>
+      )}
     </div>
   )
 }

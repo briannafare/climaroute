@@ -220,3 +220,51 @@ input:focus {
 .leaflet-overlay-pane svg path {
   filter: drop-shadow(0 0 4px rgba(52, 211, 153, 0.3));
 }
+
+/* === MOBILE BOTTOM SHEET === */
+.mobile-sheet {
+  touch-action: none;
+}
+
+.mobile-sheet .custom-scrollbar {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Mobile-specific overrides */
+@media (max-width: 767px) {
+  /* Shrink leaflet attribution on mobile */
+  .leaflet-control-attribution {
+    font-size: 7px !important;
+    max-width: 50vw;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Make leaflet popups smaller on mobile */
+  .leaflet-popup-content {
+    margin: 8px 12px !important;
+    font-size: 11px !important;
+  }
+
+  .leaflet-popup-content-wrapper {
+    border-radius: 10px !important;
+  }
+
+  /* Adjust zoom controls */
+  .leaflet-control-zoom {
+    top: 48px !important;
+  }
+
+  /* Safe area padding for bottom sheet */
+  .mobile-sheet {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Prevent body scroll */
+  body {
+    overscroll-behavior: none;
+    overflow: hidden;
+  }
+}
